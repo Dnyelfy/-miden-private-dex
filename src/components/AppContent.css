@@ -1,0 +1,116 @@
+.app {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+.app h1 {
+  margin: 0 0 0.3rem;
+  font-size: 1.8rem;
+  background: linear-gradient(135deg, #6366f1, #ec4899);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.subtitle {
+  color: #94a3b8;
+  margin: 0 0 2rem;
+  font-size: 0.95rem;
+}
+
+.wallet-info {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  color: #4ade80;
+  padding: 0.7rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  font-family: monospace;
+  font-size: 0.85rem;
+  word-break: break-all;
+}
+
+.wallet-info-disconnected {
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  color: #fbbf24;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+.card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.card h2 {
+  margin: 0 0 1rem;
+  font-size: 1.1rem;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.8rem;
+  margin-bottom: 0.8rem;
+}
+
+.card button {
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.empty {
+  color: #64748b;
+  font-size: 0.9rem;
+  text-align: center;
+  padding: 1rem 0;
+  margin: 0;
+}
+
+.order, .match {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem 0.8rem;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 6px;
+  margin-bottom: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.status, .zk {
+  font-size: 0.8rem;
+  color: #4ade80;
+  font-weight: 600;
+}
+
+.tx-link {
+  color: #818cf8;
+  text-decoration: none;
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+
+.tx-link:hover { text-decoration: underline; }
+
+.error-box {
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  color: #fca5a5;
+  padding: 0.7rem 1rem;
+  border-radius: 6px;
+  margin-top: 0.8rem;
+  font-size: 0.85rem;
+}
+
+.matches {
+  border-color: rgba(99, 102, 241, 0.3);
+  background: rgba(99, 102, 241, 0.05);
+}
