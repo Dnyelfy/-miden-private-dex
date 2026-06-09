@@ -8,7 +8,8 @@ import "./AppContent.css";
 
 const DECIMALS = 6;
 const FACTOR = 10 ** DECIMALS;
-const GITHUB_URL = "https://github.com/Dnyelfy/-miden-private-dex";
+const TWITTER_HANDLE = "Dnyelfy";
+const TWITTER_URL = `https://twitter.com/${TWITTER_HANDLE}`;
 
 // Miden testnet block time ~5s (approximate)
 const BLOCK_SECONDS = 5;
@@ -217,10 +218,13 @@ export function AppContent() {
 
   const shareOnTwitter = () => {
     const text = encodeURIComponent(
-      `🔒 Built a private dApp on @0xMiden testnet — send, swap, bulk-airdrop, time-locked vault & a privacy dashboard, all ZK. Try it 👇`,
+      `🔒 Check out this private dApp on @0xMiden testnet — send, swap, bulk-airdrop, time-locked vault & privacy analytics, all ZK 👇`,
     );
     const url = encodeURIComponent("https://miden-private-dex.vercel.app/");
-    window.open(`https://twitter.com/intent/tweet?text=${text}&url=${url}`, "_blank");
+    window.open(
+      `https://twitter.com/intent/tweet?text=${text}&url=${url}&via=${TWITTER_HANDLE}`,
+      "_blank",
+    );
   };
 
   return (
@@ -232,9 +236,6 @@ export function AppContent() {
             <h1>Miden Privacy Suite</h1>
           </div>
           <div className="hero-actions">
-            <a href={GITHUB_URL} target="_blank" rel="noreferrer" className="icon-btn">
-              ★ GitHub
-            </a>
             <button className="icon-btn twitter-btn" onClick={shareOnTwitter}>
               𝕏 Share
             </button>
@@ -376,8 +377,8 @@ export function AppContent() {
           midenscan.com
         </a>
         <span>·</span>
-        <a href={GITHUB_URL} target="_blank" rel="noreferrer" className="tx-link">
-          source
+        <a href={TWITTER_URL} target="_blank" rel="noreferrer" className="tx-link">
+          by @{TWITTER_HANDLE}
         </a>
         <span>·</span>
         <span className="muted">Built on Miden ⚡</span>
