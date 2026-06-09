@@ -4,10 +4,34 @@ import type { Asset } from "@miden-sdk/miden-wallet-adapter-base";
 import { EXPLORER_BASE_URL } from "@/config";
 import "./AppContent.css";
 
+// Most Miden testnet faucets use 6 decimals (like USDC).
+// 1 token displayed = 1_000_000 base units sent on-chain.
+const DECIMALS = 6;
+const DECIMAL_FACTOR = 10 ** DECIMALS;
+
+function formatBalance(raw: string): string {
+  // Convert "499999990" -> "499.99999"
+  try {
+    const n = Number(raw) / DECIMAL_FACTOR;
+    if (n === 0) return "0";
+    if (n < 0.000001) return n.toExponential(2);
+    return n.toLocaleString(undefined, { maximumFractionDigits: DECIMALS });
+  } catch {
+    return raw;
+  }
+}
+
+function toBaseUnits(displayAmount: string): number {
+  // "1.5" -> 1_500_000
+  const n = parseFloat(displayAmount);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.round(n * DECIMAL_FACTOR);
+}
+
 interface SendResult {
   txId: string;
   recipient: string;
-  amount: string;
+  amount: string; // display amount
   faucetId: string;
   noteType: "public" | "private";
   ts: number;
@@ -36,14 +60,14 @@ export function AppContent() {
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<SendResult[]>([]);
+  const [addrCopied, setAddrCopied] = useState(false);
+  const [copiedTxId, setCopiedTxId] = useState<string | null>(null);
 
-  // Pick first installed wallet automatically
+  // auto-select first installed wallet
   useEffect(() => {
     if (!connected && !connecting && wallets.length > 0) {
-      const firstReady = wallets[0];
-      if (firstReady?.adapter.name) {
-        select(firstReady.adapter.name);
-      }
+      const first = wallets[0];
+      if (first?.adapter.name) select(first.adapter.name);
     }
   }, [connected, connecting, wallets, select]);
 
@@ -63,9 +87,7 @@ export function AppContent() {
     try {
       const list = await requestAssets();
       setAssets(list);
-      if (list.length > 0 && !faucetId) {
-        setFaucetId(list[0].faucetId);
-      }
+      if (list.length > 0 && !faucetId) setFaucetId(list[0].faucetId);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -73,37 +95,35 @@ export function AppContent() {
     }
   }, [requestAssets, faucetId]);
 
-  // Auto-load assets once connected
   useEffect(() => {
-    if (connected && assets.length === 0) {
-      loadAssets();
-    }
+    if (connected && assets.length === 0) loadAssets();
   }, [connected, assets.length, loadAssets]);
+
+  const copyAddress = useCallback(() => {
+    if (!address) return;
+    navigator.clipboard.writeText(address).then(() => {
+      setAddrCopied(true);
+      setTimeout(() => setAddrCopied(false), 1400);
+    });
+  }, [address]);
+
+  const copyTxId = useCallback((txId: string) => {
+    navigator.clipboard.writeText(txId).then(() => {
+      setCopiedTxId(txId);
+      setTimeout(() => setCopiedTxId(null), 1400);
+    });
+  }, []);
 
   const handleSend = useCallback(async () => {
     setError(null);
 
-    if (!connected || !address) {
-      setError("Connect wallet first");
-      return;
-    }
-    if (!requestSend) {
-      setError("Wallet does not support requestSend");
-      return;
-    }
-    if (!recipient.trim()) {
-      setError("Enter a recipient address");
-      return;
-    }
-    if (!faucetId) {
-      setError("Select an asset");
-      return;
-    }
-    const amt = Number(amount);
-    if (!amt || amt <= 0) {
-      setError("Enter a valid amount");
-      return;
-    }
+    if (!connected || !address) return setError("Connect wallet first");
+    if (!requestSend) return setError("Wallet does not support requestSend");
+    if (!recipient.trim()) return setError("Enter a recipient address");
+    if (!faucetId) return setError("Select an asset");
+
+    const baseAmount = toBaseUnits(amount);
+    if (baseAmount <= 0) return setError("Enter a valid amount (e.g. 1 or 0.5)");
 
     setIsSending(true);
     try {
@@ -112,14 +132,14 @@ export function AppContent() {
         recipientAddress: recipient.trim(),
         faucetId,
         noteType,
-        amount: amt,
+        amount: baseAmount,
       });
 
       setHistory((h) => [
         {
           txId,
           recipient: recipient.trim(),
-          amount: String(amt),
+          amount,
           faucetId,
           noteType,
           ts: Date.now(),
@@ -128,7 +148,6 @@ export function AppContent() {
       ]);
       setRecipient("");
       setAmount("");
-      // refresh balances
       loadAssets();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -146,7 +165,12 @@ export function AppContent() {
     loadAssets,
   ]);
 
-  const shortAddr = address ? `${address.slice(0, 10)}…${address.slice(-6)}` : "";
+  const shortAddr = address
+    ? `${address.slice(0, 10)}…${address.slice(-6)}`
+    : "";
+
+  const selectedAsset = assets.find((a) => a.faucetId === faucetId);
+  const selectedBalance = selectedAsset ? formatBalance(selectedAsset.amount) : "0";
 
   return (
     <div className="app">
@@ -182,7 +206,13 @@ export function AppContent() {
       ) : (
         <>
           <div className="wallet-info">
-            <span>✅ {shortAddr}</span>
+            <span
+              className="addr-clickable"
+              onClick={copyAddress}
+              title="Click to copy"
+            >
+              {addrCopied ? "✅ Copied!" : `✅ ${shortAddr}`}
+            </span>
             <button
               className="disconnect-btn"
               onClick={() => disconnect()}
@@ -199,6 +229,7 @@ export function AppContent() {
                 className="ghost"
                 onClick={loadAssets}
                 disabled={loadingAssets}
+                title="Refresh"
               >
                 {loadingAssets ? "…" : "↻"}
               </button>
@@ -215,7 +246,7 @@ export function AppContent() {
                 <span className="mono">
                   {a.faucetId.slice(0, 14)}…{a.faucetId.slice(-6)}
                 </span>
-                <span className="amount">{a.amount}</span>
+                <span className="amount">{formatBalance(a.amount)}</span>
               </div>
             ))}
           </div>
@@ -245,21 +276,36 @@ export function AppContent() {
                   )}
                   {assets.map((a) => (
                     <option key={a.faucetId} value={a.faucetId}>
-                      {a.faucetId.slice(0, 18)}… · {a.amount}
+                      {a.faucetId.slice(0, 16)}… · {formatBalance(a.amount)}
                     </option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label>Amount</label>
+                <div className="amount-row">
+                  <label>Amount</label>
+                  {selectedAsset && (
+                    <button
+                      type="button"
+                      className="max-btn"
+                      onClick={() => setAmount(selectedBalance.replace(/,/g, ""))}
+                    >
+                      MAX ({selectedBalance})
+                    </button>
+                  )}
+                </div>
                 <input
                   type="number"
                   min="0"
+                  step="any"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
-                  placeholder="100"
+                  placeholder="1.5"
                 />
+                <p className="hint">
+                  Enter amount as you'd say it (e.g. <code>1</code> = 1 token).
+                </p>
               </div>
 
               <div>
@@ -282,6 +328,11 @@ export function AppContent() {
                     <span>Public 🌐</span>
                   </label>
                 </div>
+                <p className="hint">
+                  {noteType === "private"
+                    ? "🔒 Hidden on midenscan. Recipient sees & accepts the note in their wallet."
+                    : "🌐 Visible on midenscan. Auto-credited to recipient."}
+                </p>
               </div>
             </div>
 
@@ -303,17 +354,26 @@ export function AppContent() {
                 <div key={h.txId} className="tx-row">
                   <div className="tx-row-top">
                     <span>
-                      {h.amount} {noteType === "private" ? "🔒" : "🌐"} →{" "}
+                      {h.amount} {h.noteType === "private" ? "🔒" : "🌐"} →{" "}
                       {h.recipient.slice(0, 10)}…{h.recipient.slice(-6)}
                     </span>
-                    <a
-                      className="tx-link"
-                      href={`${EXPLORER_BASE_URL}/tx/${h.txId}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      view ↗
-                    </a>
+                    <div style={{ display: "flex", gap: "0.5rem" }}>
+                      <button
+                        className="ghost tiny"
+                        onClick={() => copyTxId(h.txId)}
+                        title="Copy tx ID"
+                      >
+                        {copiedTxId === h.txId ? "✓" : "⧉"}
+                      </button>
+                      <a
+                        className="tx-link"
+                        href={`${EXPLORER_BASE_URL}/tx/${h.txId}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        view ↗
+                      </a>
+                    </div>
                   </div>
                 </div>
               ))}
