@@ -219,3 +219,135 @@ button.ghost.tiny {
   font-size: 0.85rem;
   line-height: 1;
 }
+
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 0.3rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.tab {
+  flex: 1;
+  background: transparent;
+  color: #94a3b8;
+  border: none;
+  padding: 0.55rem 0.8rem;
+  border-radius: 7px;
+  font-weight: 500;
+  font-size: 0.92rem;
+  transition: all 0.15s;
+}
+.tab:hover { color: #cbd5e1; transform: none; }
+.tab.active {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: white;
+  font-weight: 600;
+}
+
+/* Swap layout */
+.swap-grid {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 0.6rem;
+  align-items: start;
+  margin-top: 0.8rem;
+}
+.swap-side {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.swap-side-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+  margin-bottom: 0.2rem;
+}
+.swap-arrow {
+  align-self: center;
+  font-size: 1.4rem;
+  color: #6366f1;
+  padding: 0 0.1rem;
+  margin-top: 2rem;
+}
+
+/* Swap rows */
+.swap-row {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 0.8rem;
+  margin-bottom: 0.6rem;
+}
+.swap-row.status-completed {
+  border-color: rgba(34, 197, 94, 0.3);
+  background: rgba(34, 197, 94, 0.04);
+}
+.swap-row.status-you_sent {
+  border-color: rgba(251, 191, 36, 0.3);
+  background: rgba(251, 191, 36, 0.04);
+}
+.swap-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+.swap-row-body {
+  font-size: 0.85rem;
+  color: #cbd5e1;
+  margin-bottom: 0.4rem;
+}
+.swap-row-meta {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  margin-bottom: 0.6rem;
+}
+.swap-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
+.badge {
+  font-size: 0.72rem;
+  padding: 0.18rem 0.5rem;
+  border-radius: 999px;
+  font-weight: 600;
+}
+.badge-you_sent {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+}
+.badge-completed {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+}
+
+button.small {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.82rem;
+}
+button.primary {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+}
+
+@media (max-width: 480px) {
+  .swap-grid {
+    grid-template-columns: 1fr;
+  }
+  .swap-arrow {
+    margin: 0;
+    transform: rotate(90deg);
+    text-align: center;
+  }
+}
