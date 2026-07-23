@@ -1365,13 +1365,24 @@ function VaultTab({
   const [loadingGuardian, setLoadingGuardian] = useState(false);
 
   const refreshGuardian = useCallback(async () => {
-    if (!requestGuardianInfo) return;
+    if (typeof requestGuardianInfo !== "function") {
+      setGuardian(null);
+      setGuardianError(null);
+      return;
+    }
     setLoadingGuardian(true);
     setGuardianError(null);
     try {
       setGuardian(await requestGuardianInfo());
     } catch (e) {
-      setGuardianError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes("is not a function")) {
+        // Installed wallet extension predates the Guardian API — not an error.
+        setGuardian(null);
+        setGuardianError(null);
+      } else {
+        setGuardianError(msg);
+      }
     } finally {
       setLoadingGuardian(false);
     }
@@ -1481,7 +1492,11 @@ function VaultTab({
         </div>
         {guardianError && <div className="error-box">{guardianError}</div>}
         {!guardianError && !guardian && (
-          <p className="empty">{loadingGuardian ? "Checking…" : "Guardian status unavailable."}</p>
+          <p className="empty">
+            {loadingGuardian
+              ? "Checking…"
+              : "Guardian status not available yet — update the MidenFi wallet extension to a Guardian-aware version to see recovery protection here."}
+          </p>
         )}
         {guardian && (
           <>
