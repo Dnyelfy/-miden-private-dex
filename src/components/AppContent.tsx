@@ -1,1501 +1,563 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { useMidenFiWallet } from "@miden-sdk/miden-wallet-adapter-react";
-import type { Asset, InputNoteDetails } from "@miden-sdk/miden-wallet-adapter-base";
-import { EXPLORER_BASE_URL } from "@/config";
-import "./AppContent.css";
-
-// ─── Constants & helpers ───────────────────────────────────────────────────
-
-const DECIMALS = 6;
-const FACTOR = 10 ** DECIMALS;
-const TWITTER_HANDLE = "Dnyelfy";
-const TWITTER_URL = `https://twitter.com/${TWITTER_HANDLE}`;
-
-const BLOCK_SECONDS = 5;
-const RECALL_PRESETS = [
-  { label: "1h", seconds: 3600 },
-  { label: "24h", seconds: 86400 },
-  { label: "7d", seconds: 604800 },
-];
-
-function formatBalance(raw: string | number): string {
-  try {
-    const n = Number(raw) / FACTOR;
-    if (n === 0) return "0";
-    if (n < 0.000001) return n.toExponential(2);
-    return n.toLocaleString(undefined, { maximumFractionDigits: DECIMALS });
-  } catch {
-    return String(raw);
-  }
+.app {
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
 }
 
-function toBaseUnits(display: string): number {
-  const n = parseFloat(display);
-  if (!Number.isFinite(n) || n <= 0) return 0;
-  return Math.round(n * FACTOR);
+/* ── Hero ─────────────────────────────────────────────────────────────── */
+
+.hero { margin-bottom: 1.5rem; }
+.hero-top {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 0.4rem; gap: 1rem; flex-wrap: wrap;
+}
+.brand { display: flex; align-items: center; gap: 0.55rem; }
+.logo-glow {
+  font-size: 1.6rem;
+  filter: drop-shadow(0 0 8px rgba(139, 92, 246, 0.7));
+}
+.app h1 {
+  margin: 0; font-size: 1.6rem; font-weight: 700;
+  background: linear-gradient(135deg, #818cf8, #c084fc, #ec4899);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.hero-actions { display: flex; gap: 0.4rem; }
+.icon-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #cbd5e1; padding: 0.42rem 0.8rem;
+  border-radius: 7px; font-size: 0.82rem; font-weight: 500;
+  text-decoration: none; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  transition: all 0.15s;
+}
+.icon-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+.twitter-btn:hover { border-color: #1d9bf0; color: #1d9bf0; }
+
+.subtitle {
+  color: #94a3b8; margin: 0; font-size: 0.92rem;
+  display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
+}
+.badge-net {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(168, 85, 247, 0.15));
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  color: #c084fc; padding: 0.1rem 0.55rem;
+  border-radius: 999px; font-size: 0.78rem; font-weight: 600;
 }
 
-function shortAddr(s: string, head = 8, tail = 6) {
-  if (!s) return "";
-  if (s.length <= head + tail + 2) return s;
-  return `${s.slice(0, head)}…${s.slice(-tail)}`;
+/* ── Wallet bar ──────────────────────────────────────────────────────── */
+
+.wallet-info {
+  display: flex; align-items: center; justify-content: space-between;
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(34, 197, 94, 0.04));
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  color: #4ade80; padding: 0.6rem 0.9rem;
+  border-radius: 10px; margin-bottom: 1rem;
+  font-family: monospace; font-size: 0.85rem;
+}
+.wallet-info-disconnected {
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  color: #fbbf24; padding: 1.5rem;
+  border-radius: 12px; margin-bottom: 1.2rem; text-align: center;
+}
+.wallet-info-disconnected p { margin: 0; }
+
+.addr-clickable { cursor: pointer; user-select: none; }
+.addr-clickable:hover { opacity: 0.85; }
+
+.disconnect-btn {
+  background: transparent; color: #4ade80;
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  padding: 0 0.6rem; font-size: 1.1rem; line-height: 1.6; cursor: pointer;
+}
+.disconnect-btn:hover {
+  background: rgba(248, 113, 113, 0.1);
+  color: #fca5a5; border-color: rgba(248, 113, 113, 0.3);
 }
 
-function formatDuration(seconds: number): string {
-  if (seconds <= 0) return "0s";
-  const d = Math.floor(seconds / 86400);
-  const h = Math.floor((seconds % 86400) / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  if (d > 0) return `${d}d ${h}h`;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
+/* ── Tabs ────────────────────────────────────────────────────────────── */
+
+.tabs {
+  display: flex; gap: 0.3rem; margin-bottom: 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 0.3rem; border-radius: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  overflow-x: auto;
+}
+.tab {
+  flex: 1; background: transparent; color: #94a3b8; border: none;
+  padding: 0.55rem 0.6rem; border-radius: 7px;
+  font-weight: 500; font-size: 0.85rem;
+  transition: all 0.15s; white-space: nowrap;
+}
+.tab:hover { color: #cbd5e1; transform: none; }
+.tab.active {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: white; font-weight: 600;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);
 }
 
-// ─── localStorage stores ───────────────────────────────────────────────────
+/* ── Cards ───────────────────────────────────────────────────────────── */
 
-const ALIAS_KEY = "miden_dex_asset_aliases_v1";
-const SWAPS_KEY = "miden_dex_swaps_v1";
-const VAULT_KEY = "miden_dex_vault_v1";
-const TX_LOG_KEY = "miden_dex_txlog_v1";
-
-function lsLoad<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    const parsed = JSON.parse(raw);
-    return parsed ?? fallback;
-  } catch {
-    return fallback;
-  }
+.card {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px; padding: 1.3rem;
+  margin-bottom: 1rem;
 }
-function lsSave(key: string, val: unknown) {
-  try {
-    localStorage.setItem(key, JSON.stringify(val));
-  } catch {
-    /* ignore */
-  }
+.card-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 0.8rem;
 }
+.card h2 {
+  margin: 0 0 0.8rem; font-size: 1rem;
+  color: #e2e8f0; font-weight: 600;
+  display: flex; align-items: center;
+}
+.card-head h2 { margin: 0; }
 
-// ─── Types ─────────────────────────────────────────────────────────────────
+button.ghost {
+  background: transparent; border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #94a3b8; padding: 0.3rem 0.6rem; font-size: 0.85rem;
+}
+button.ghost.tiny { padding: 0.15rem 0.45rem; font-size: 0.85rem; line-height: 1; }
+button.small { padding: 0.4rem 0.75rem; font-size: 0.82rem; }
+button.primary { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
 
-type SwapStatus = "you_sent" | "completed";
-
-interface Swap {
-  id: string;
-  counterparty: string;
-  sendFaucetId: string;
-  sendAmount: string;
-  recvFaucetId: string;
-  recvAmount: string;
-  status: SwapStatus;
-  ourTxId?: string;
-  ts: number;
+.empty {
+  color: #64748b; font-size: 0.88rem; text-align: center;
+  padding: 1rem 0; margin: 0;
 }
 
-interface VaultEntry {
-  id: string;
-  recipient: string;
-  faucetId: string;
-  amount: string;
-  recallSeconds: number;
-  txId: string;
-  ts: number;
-  recalled?: boolean;
-  recallTxId?: string;
+/* ── Banner (roadmap info) ───────────────────────────────────────────── */
+
+.banner {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.05));
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  color: #c7d2fe; padding: 0.65rem 0.85rem;
+  border-radius: 8px; margin-bottom: 0.8rem;
+  font-size: 0.82rem;
 }
 
-interface TxLogEntry {
-  txId: string;
-  type: "send" | "swap" | "airdrop" | "vault" | "recall";
-  recipient: string;
-  faucetId: string;
-  amount: string;
-  noteType: "private" | "public";
-  ts: number;
+/* ── Assets ──────────────────────────────────────────────────────────── */
+
+.asset {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0.6rem 0.8rem;
+  background: rgba(255, 255, 255, 0.025);
+  border-radius: 8px; margin-bottom: 0.4rem; font-size: 0.88rem;
+  transition: background 0.15s;
+}
+.asset:hover { background: rgba(255, 255, 255, 0.04); }
+
+.mono { font-family: monospace; color: #94a3b8; }
+.amount { font-weight: 600; color: #e2e8f0; }
+
+.asset-id, .asset-symbol {
+  cursor: pointer; display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.15rem 0.5rem; border-radius: 5px;
+  transition: background 0.15s;
+}
+.asset-id:hover, .asset-symbol:hover { background: rgba(255, 255, 255, 0.06); }
+.asset-symbol {
+  font-weight: 700; color: #c084fc;
+  font-size: 0.92rem; letter-spacing: 0.02em;
+}
+.edit-hint { opacity: 0.4; font-size: 0.75em; }
+
+.alias-edit { display: flex; gap: 0.3rem; align-items: center; flex: 1; }
+.alias-edit input { width: auto; flex: 1; padding: 0.3rem 0.5rem; font-size: 0.85rem; }
+
+/* ── Form bits ───────────────────────────────────────────────────────── */
+
+.amount-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+}
+.amount-row label { margin: 0; }
+
+.max-btn {
+  background: transparent; color: #818cf8;
+  border: 1px solid rgba(129, 140, 248, 0.3);
+  padding: 0.18rem 0.5rem; font-size: 0.72rem;
+  font-weight: 600; border-radius: 4px;
+}
+.max-btn:hover { background: rgba(129, 140, 248, 0.1); }
+
+.hint {
+  margin: 0.35rem 0 0; font-size: 0.78rem;
+  color: #64748b; line-height: 1.5;
+}
+.hint code {
+  background: rgba(255, 255, 255, 0.07);
+  padding: 0.05rem 0.3rem; border-radius: 3px;
+  font-size: 0.85em; color: #c084fc;
 }
 
-interface AirdropResult {
-  recipient: string;
-  amount: string;
-  ok: boolean;
-  txId?: string;
-  error?: string;
-  confirmed?: boolean;
+.radio-row { display: flex; gap: 0.5rem; }
+.radio {
+  display: flex; align-items: center; gap: 0.4rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px; cursor: pointer;
+  font-size: 0.88rem; color: #cbd5e1;
+  margin: 0; flex: 1; justify-content: center;
+}
+.radio:has(input:checked) {
+  border-color: #6366f1; background: rgba(99, 102, 241, 0.1);
+  color: #c7d2fe;
+}
+.radio input { width: auto; }
+
+.error-box {
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  color: #fca5a5; padding: 0.7rem 0.9rem;
+  border-radius: 8px; margin-top: 0.8rem;
+  font-size: 0.85rem; word-break: break-word;
+}
+.success-box {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  color: #4ade80; padding: 0.7rem 0.9rem;
+  border-radius: 8px; margin-top: 0.8rem;
+  font-size: 0.85rem; word-break: break-word;
 }
 
-type TxStage = "idle" | "signing" | "broadcasting" | "confirming" | "confirmed" | "error";
+/* ── Toggle & Recall ─────────────────────────────────────────────────── */
 
-interface TxStatus {
-  stage: TxStage;
-  txId?: string;
-  error?: string;
+.recall-section {
+  background: rgba(99, 102, 241, 0.04);
+  border: 1px solid rgba(99, 102, 241, 0.15);
+  border-radius: 8px; padding: 0.75rem;
+}
+.toggle {
+  display: flex; align-items: center; gap: 0.5rem;
+  cursor: pointer; font-size: 0.88rem; color: #cbd5e1;
+  margin: 0;
+}
+.toggle input { width: auto; }
+.recall-presets {
+  display: flex; gap: 0.4rem; margin-top: 0.6rem;
+}
+.preset {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94a3b8; padding: 0.3rem 0.7rem;
+  font-size: 0.8rem; border-radius: 6px;
+  cursor: pointer; transition: all 0.15s;
+}
+.preset:hover { color: #cbd5e1; }
+.preset.active {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: white; border-color: transparent;
+  font-weight: 600;
 }
 
-// ─── Main ──────────────────────────────────────────────────────────────────
+/* ── Tx status indicator ─────────────────────────────────────────────── */
 
-type Tab = "send" | "swap" | "airdrop" | "vault" | "privacy";
+.tx-status {
+  margin-top: 0.8rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.86rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  animation: fadeIn 0.2s ease;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.tx-status-icon { font-size: 1rem; }
+.tx-status-text { flex: 1; }
 
-export function AppContent() {
-  const wallet = useMidenFiWallet();
-  const {
-    connected,
-    connecting,
-    address,
-    wallets,
-    select,
-    connect,
-    disconnect,
-    requestSend,
-    requestConsume,
-    requestConsumableNotes,
-    requestAssets,
-    waitForTransaction,
-  } = wallet;
-
-  const [tab, setTab] = useState<Tab>("send");
-  const [assets, setAssets] = useState<Asset[]>([]);
-  const [loadingAssets, setLoadingAssets] = useState(false);
-  const [addrCopied, setAddrCopied] = useState(false);
-  const [globalError, setGlobalError] = useState<string | null>(null);
-  const [aliases, setAliases] = useState<Record<string, string>>(() =>
-    lsLoad(ALIAS_KEY, {} as Record<string, string>),
-  );
-  const [editingAlias, setEditingAlias] = useState<string | null>(null);
-  const [txLog, setTxLog] = useState<TxLogEntry[]>(() =>
-    lsLoad(TX_LOG_KEY, [] as TxLogEntry[]),
-  );
-
-  useEffect(() => {
-    if (!connected && !connecting && wallets.length > 0) {
-      const first = wallets[0];
-      if (first?.adapter.name) select(first.adapter.name);
-    }
-  }, [connected, connecting, wallets, select]);
-
-  const handleConnect = useCallback(async () => {
-    setGlobalError(null);
-    try {
-      await connect();
-    } catch (e) {
-      setGlobalError(e instanceof Error ? e.message : String(e));
-    }
-  }, [connect]);
-
-  const loadAssets = useCallback(async () => {
-    if (!requestAssets) return;
-    setLoadingAssets(true);
-    setGlobalError(null);
-    try {
-      const list = await requestAssets();
-      setAssets(list);
-    } catch (e) {
-      setGlobalError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoadingAssets(false);
-    }
-  }, [requestAssets]);
-
-  useEffect(() => {
-    if (connected && assets.length === 0) loadAssets();
-  }, [connected, assets.length, loadAssets]);
-
-  const copyAddress = useCallback(() => {
-    if (!address) return;
-    navigator.clipboard.writeText(address).then(() => {
-      setAddrCopied(true);
-      setTimeout(() => setAddrCopied(false), 1400);
-    });
-  }, [address]);
-
-  const setAlias = (faucetId: string, name: string) => {
-    const next = { ...aliases };
-    if (name.trim()) next[faucetId] = name.trim().toUpperCase().slice(0, 8);
-    else delete next[faucetId];
-    setAliases(next);
-    lsSave(ALIAS_KEY, next);
-    setEditingAlias(null);
-  };
-
-  const labelFor = (faucetId: string): string =>
-    aliases[faucetId] || shortAddr(faucetId, 10, 4);
-
-  const logTx = useCallback((entry: TxLogEntry) => {
-    setTxLog((prev) => {
-      const next = [entry, ...prev].slice(0, 500);
-      lsSave(TX_LOG_KEY, next);
-      return next;
-    });
-  }, []);
-
-  const shareOnTwitter = () => {
-    const text = encodeURIComponent(
-      `🔒 Check out this private dApp on @0xMiden testnet — send, swap, bulk-airdrop, time-locked vault & privacy analytics, all ZK 👇`,
-    );
-    const url = encodeURIComponent("https://miden-private-dex.vercel.app/");
-    window.open(
-      `https://twitter.com/intent/tweet?text=${text}&url=${url}&via=${TWITTER_HANDLE}`,
-      "_blank",
-    );
-  };
-
-  return (
-    <div className="app">
-      <header className="hero">
-        <div className="hero-top">
-          <div className="brand">
-            <span className="logo-glow">🔒</span>
-            <h1>Miden Privacy Suite</h1>
-          </div>
-          <div className="hero-actions">
-            <button className="icon-btn twitter-btn" onClick={shareOnTwitter}>
-              𝕏 Share
-            </button>
-          </div>
-        </div>
-        <p className="subtitle">
-          Private send · OTC swap · bulk airdrop · time-locked vault · privacy analytics on{" "}
-          <span className="badge-net">Miden Testnet v0.13</span>
-        </p>
-      </header>
-
-      {!connected ? (
-        <div className="wallet-info-disconnected">
-          {wallets.length === 0 ? (
-            <>
-              <p>
-                <strong>Miden Wallet</strong> extension not found.
-              </p>
-              <p style={{ fontSize: "0.85rem", marginTop: "0.5rem" }}>
-                Install it from the Chrome Web Store, then refresh.
-              </p>
-            </>
-          ) : (
-            <>
-              <p>Wallet detected. Click to connect.</p>
-              <button
-                onClick={handleConnect}
-                disabled={connecting}
-                style={{ marginTop: "0.8rem" }}
-              >
-                {connecting ? "Connecting…" : "Connect Wallet"}
-              </button>
-            </>
-          )}
-          {globalError && <div className="error-box">{globalError}</div>}
-        </div>
-      ) : (
-        <>
-          <div className="wallet-info">
-            <span className="addr-clickable" onClick={copyAddress} title="Click to copy">
-              {addrCopied ? "✅ Copied!" : `✅ ${shortAddr(address!, 10, 6)}`}
-            </span>
-            <button className="disconnect-btn" onClick={() => disconnect()}>×</button>
-          </div>
-
-          <div className="tabs">
-            <TabBtn label="💸 Send" active={tab === "send"} onClick={() => setTab("send")} />
-            <TabBtn label="🔄 Swap" active={tab === "swap"} onClick={() => setTab("swap")} />
-            <TabBtn label="🪂 Airdrop" active={tab === "airdrop"} onClick={() => setTab("airdrop")} />
-            <TabBtn label="🔐 Vault" active={tab === "vault"} onClick={() => setTab("vault")} />
-            <TabBtn label="📊 Privacy" active={tab === "privacy"} onClick={() => setTab("privacy")} />
-          </div>
-
-          <div className="card">
-            <div className="card-head">
-              <h2>Your Assets</h2>
-              <button className="ghost" onClick={loadAssets} disabled={loadingAssets}>
-                {loadingAssets ? "…" : "↻"}
-              </button>
-            </div>
-            {assets.length === 0 && (
-              <p className="empty">
-                {loadingAssets ? "Loading…" : "No assets yet — claim from Miden faucet."}
-              </p>
-            )}
-            {assets.map((a) => (
-              <div key={a.faucetId} className="asset">
-                {editingAlias === a.faucetId ? (
-                  <AliasEditor
-                    initial={aliases[a.faucetId] || ""}
-                    onSave={(name) => setAlias(a.faucetId, name)}
-                    onCancel={() => setEditingAlias(null)}
-                  />
-                ) : (
-                  <>
-                    <span
-                      className={aliases[a.faucetId] ? "asset-symbol" : "mono asset-id"}
-                      onClick={() => setEditingAlias(a.faucetId)}
-                      title="Click to label (e.g. MIDEN)"
-                    >
-                      {aliases[a.faucetId] || shortAddr(a.faucetId, 14, 6)}
-                      <span className="edit-hint">✎</span>
-                    </span>
-                    <span className="amount">{formatBalance(a.amount)}</span>
-                  </>
-                )}
-              </div>
-            ))}
-            {assets.length > 0 && (
-              <p className="hint" style={{ marginTop: "0.5rem" }}>
-                💡 Click a faucet ID to label it (e.g. <code>MIDEN</code>).
-              </p>
-            )}
-          </div>
-
-          {tab === "send" && (
-            <SendTab
-              address={address!}
-              assets={assets}
-              labelFor={labelFor}
-              requestSend={requestSend}
-              waitForTransaction={waitForTransaction}
-              onSent={loadAssets}
-              logTx={logTx}
-            />
-          )}
-          {tab === "swap" && (
-            <SwapTab
-              address={address!}
-              assets={assets}
-              labelFor={labelFor}
-              requestSend={requestSend}
-              waitForTransaction={waitForTransaction}
-              onSent={loadAssets}
-              logTx={logTx}
-            />
-          )}
-          {tab === "airdrop" && (
-            <AirdropTab
-              address={address!}
-              assets={assets}
-              labelFor={labelFor}
-              requestSend={requestSend}
-              waitForTransaction={waitForTransaction}
-              onSent={loadAssets}
-              logTx={logTx}
-            />
-          )}
-          {tab === "vault" && (
-            <VaultTab
-              labelFor={labelFor}
-              requestConsume={requestConsume}
-              requestConsumableNotes={requestConsumableNotes}
-              waitForTransaction={waitForTransaction}
-              onRecalled={loadAssets}
-              logTx={logTx}
-            />
-          )}
-          {tab === "privacy" && (
-            <PrivacyTab txLog={txLog} labelFor={labelFor} />
-          )}
-        </>
-      )}
-
-      <footer className="footer">
-        <a href={EXPLORER_BASE_URL} target="_blank" rel="noreferrer" className="tx-link">
-          midenscan.com
-        </a>
-        <span>·</span>
-        <a href={TWITTER_URL} target="_blank" rel="noreferrer" className="tx-link">
-          by @{TWITTER_HANDLE}
-        </a>
-        <span>·</span>
-        <span className="muted">Built on Miden ⚡</span>
-      </footer>
-    </div>
-  );
+.tx-status-signing {
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  color: #fcd34d;
+}
+.tx-status-broadcasting {
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: #93c5fd;
+}
+.tx-status-confirming {
+  background: rgba(139, 92, 246, 0.08);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  color: #c4b5fd;
+}
+.tx-status-confirming .tx-status-icon {
+  animation: spin 1.5s linear infinite;
+  display: inline-block;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.tx-status-confirmed {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  color: #4ade80;
+}
+.tx-status-error {
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  color: #fca5a5;
 }
 
-// ─── Small helpers ─────────────────────────────────────────────────────────
+/* ── Tx history ──────────────────────────────────────────────────────── */
 
-function TabBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button className={`tab ${active ? "active" : ""}`} onClick={onClick}>
-      {label}
-    </button>
-  );
+.tx-row {
+  padding: 0.65rem 0.8rem; background: rgba(255, 255, 255, 0.025);
+  border-radius: 8px; margin-bottom: 0.4rem; font-size: 0.88rem;
+}
+.tx-row.err {
+  background: rgba(248, 113, 113, 0.05);
+  border: 1px solid rgba(248, 113, 113, 0.2);
+}
+.tx-row-top {
+  display: flex; justify-content: space-between;
+  align-items: center; gap: 0.5rem;
+}
+.tx-link {
+  color: #818cf8; text-decoration: none;
+  font-family: monospace; font-size: 0.8rem;
+}
+.tx-link:hover { text-decoration: underline; }
+
+/* ── Swap ────────────────────────────────────────────────────────────── */
+
+.swap-grid {
+  display: grid; grid-template-columns: 1fr auto 1fr;
+  gap: 0.7rem; align-items: start; margin-top: 0.8rem;
+}
+.swap-side {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px; padding: 0.8rem;
+  display: flex; flex-direction: column; gap: 0.5rem;
+}
+.swap-side-label {
+  font-size: 0.7rem; text-transform: uppercase;
+  letter-spacing: 0.06em; color: #94a3b8;
+  font-weight: 600; margin-bottom: 0.2rem;
+}
+.swap-arrow {
+  align-self: center; font-size: 1.4rem;
+  color: #818cf8; padding: 0 0.1rem; margin-top: 2.2rem;
+}
+.swap-row {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px; padding: 0.9rem; margin-bottom: 0.6rem;
+}
+.swap-row.status-completed {
+  border-color: rgba(34, 197, 94, 0.3);
+  background: rgba(34, 197, 94, 0.04);
+}
+.swap-row.status-you_sent {
+  border-color: rgba(251, 191, 36, 0.3);
+  background: rgba(251, 191, 36, 0.04);
+}
+.swap-row-top {
+  display: flex; justify-content: space-between;
+  align-items: center; margin-bottom: 0.4rem;
+}
+.swap-row-body { font-size: 0.85rem; color: #cbd5e1; margin-bottom: 0.4rem; }
+.swap-row-meta { font-size: 0.78rem; color: #94a3b8; margin-bottom: 0.6rem; }
+.swap-actions { display: flex; gap: 0.4rem; margin-top: 0.4rem; }
+
+.badge {
+  font-size: 0.72rem; padding: 0.2rem 0.55rem;
+  border-radius: 999px; font-weight: 600;
+}
+.badge-you_sent { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
+.badge-completed { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+.badge-error { background: rgba(248, 113, 113, 0.15); color: #fca5a5; }
+
+/* ── Airdrop ─────────────────────────────────────────────────────────── */
+
+.recipient-list {
+  width: 100%; min-height: 130px; resize: vertical;
+  padding: 0.6em 0.8em; font-family: monospace;
+  font-size: 0.82rem;
+  border-radius: 6px; border: 1px solid #2a3142;
+  background: #1a1f2e; color: inherit;
+}
+.recipient-list:focus { outline: none; border-color: #6366f1; }
+
+.airdrop-summary {
+  display: flex; justify-content: space-between;
+  margin-top: 0.8rem; padding: 0.7rem 0.9rem;
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 8px; font-size: 0.88rem;
 }
 
-function AliasEditor({
-  initial,
-  onSave,
-  onCancel,
-}: {
-  initial: string;
-  onSave: (name: string) => void;
-  onCancel: () => void;
-}) {
-  const [name, setName] = useState(initial);
-  return (
-    <div className="alias-edit">
-      <input
-        autoFocus
-        type="text"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        maxLength={8}
-        placeholder="MIDEN"
-        onKeyDown={(e) => {
-          if (e.key === "Enter") onSave(name);
-          if (e.key === "Escape") onCancel();
-        }}
-      />
-      <button className="small primary" onClick={() => onSave(name)}>✓</button>
-      <button className="small ghost" onClick={onCancel}>×</button>
-    </div>
-  );
+.progress-bar {
+  margin-top: 0.7rem; height: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 3px; overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #6366f1, #8b5cf6, #ec4899);
+  transition: width 0.3s;
 }
 
-function TxStatusIndicator({ status }: { status: TxStatus }) {
-  if (status.stage === "idle") return null;
+/* ── Vault ───────────────────────────────────────────────────────────── */
 
-  let icon = "";
-  let text = "";
-  let cls = "";
-
-  switch (status.stage) {
-    case "signing":
-      icon = "✍️";
-      text = "Awaiting wallet signature…";
-      cls = "signing";
-      break;
-    case "broadcasting":
-      icon = "📡";
-      text = "Broadcasting to Miden…";
-      cls = "broadcasting";
-      break;
-    case "confirming":
-      icon = "⏳";
-      text = "Waiting for on-chain confirmation…";
-      cls = "confirming";
-      break;
-    case "confirmed":
-      icon = "✅";
-      text = "Confirmed on-chain!";
-      cls = "confirmed";
-      break;
-    case "error":
-      icon = "❌";
-      text = status.error || "Transaction failed";
-      cls = "error";
-      break;
-  }
-
-  return (
-    <div className={`tx-status tx-status-${cls}`}>
-      <span className="tx-status-icon">{icon}</span>
-      <span className="tx-status-text">{text}</span>
-      {status.txId && status.stage !== "error" && (
-        <a
-          href={`${EXPLORER_BASE_URL}/tx/${status.txId}`}
-          target="_blank"
-          rel="noreferrer"
-          className="tx-link"
-          style={{ marginLeft: "auto" }}
-        >
-          {shortAddr(status.txId, 6, 4)} ↗
-        </a>
-      )}
-    </div>
-  );
+.vault-row { padding: 1rem 1.2rem; }
+.vault-row.vault-expired {
+  border-color: rgba(34, 197, 94, 0.3);
+  background: rgba(34, 197, 94, 0.04);
+}
+.vault-top {
+  display: flex; justify-content: space-between;
+  align-items: center; margin-bottom: 0.6rem;
+}
+.vault-meta {
+  font-size: 0.78rem; color: #94a3b8;
+  margin-bottom: 0.5rem;
+}
+.countdown-bar {
+  height: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 3px; overflow: hidden;
+  margin-bottom: 0.6rem;
+}
+.countdown-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #fbbf24, #f97316);
+  transition: width 1s linear;
 }
 
-// ─── Tab props ─────────────────────────────────────────────────────────────
+/* ── Privacy ─────────────────────────────────────────────────────────── */
 
-interface CommonTabProps {
-  address: string;
-  assets: Asset[];
-  labelFor: (faucetId: string) => string;
-  requestSend: ReturnType<typeof useMidenFiWallet>["requestSend"];
-  waitForTransaction: ReturnType<typeof useMidenFiWallet>["waitForTransaction"];
-  onSent: () => void;
-  logTx: (entry: TxLogEntry) => void;
+.privacy-hero {
+  text-align: center;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(168, 85, 247, 0.05));
+  border: 1px solid rgba(139, 92, 246, 0.2);
+}
+.privacy-score-wrap {
+  display: flex; align-items: center; justify-content: center;
+  gap: 1.2rem; padding: 0.8rem 0;
+}
+.score-ring { display: block; }
+.privacy-label {
+  font-size: 0.72rem; text-transform: uppercase;
+  letter-spacing: 0.08em; color: #94a3b8; font-weight: 600;
+}
+.privacy-value {
+  font-size: 1.8rem; font-weight: 700; margin: 0.15rem 0;
+}
+.privacy-sub { font-size: 0.85rem; color: #cbd5e1; }
+
+.stat-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem; margin-bottom: 1rem;
+}
+.stat {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px; padding: 0.7rem; text-align: center;
+}
+.stat-value {
+  font-size: 1.3rem; font-weight: 700; color: #e2e8f0;
+}
+.stat-label {
+  font-size: 0.72rem; text-transform: uppercase;
+  letter-spacing: 0.05em; color: #94a3b8;
+  margin-top: 0.15rem;
 }
 
-// ─── SEND TAB ──────────────────────────────────────────────────────────────
-
-function SendTab({ address, assets, labelFor, requestSend, waitForTransaction, onSent, logTx }: CommonTabProps) {
-  const [recipient, setRecipient] = useState("");
-  const [amount, setAmount] = useState("");
-  const [faucetId, setFaucetId] = useState("");
-  const [noteType, setNoteType] = useState<"public" | "private">("private");
-  const [recallable, setRecallable] = useState(false);
-  const [recallPreset, setRecallPreset] = useState(RECALL_PRESETS[1]);
-  const [status, setStatus] = useState<TxStatus>({ stage: "idle" });
-
-  useEffect(() => {
-    if (assets.length > 0 && !faucetId) setFaucetId(assets[0].faucetId);
-  }, [assets, faucetId]);
-
-  const selectedAsset = assets.find((a) => a.faucetId === faucetId);
-  const selectedBalance = selectedAsset ? formatBalance(selectedAsset.amount) : "0";
-  const isBusy = status.stage !== "idle" && status.stage !== "confirmed" && status.stage !== "error";
-
-  const handleSend = async () => {
-    if (!requestSend) return setStatus({ stage: "error", error: "Wallet not ready" });
-    if (!recipient.trim()) return setStatus({ stage: "error", error: "Enter a recipient" });
-    if (!faucetId) return setStatus({ stage: "error", error: "Select an asset" });
-    const baseAmount = toBaseUnits(amount);
-    if (baseAmount <= 0) return setStatus({ stage: "error", error: "Enter a valid amount" });
-
-    setStatus({ stage: "signing" });
-    try {
-      const recallBlocks = recallable
-        ? Math.floor(recallPreset.seconds / BLOCK_SECONDS)
-        : undefined;
-
-      const txId = await requestSend({
-        senderAddress: address,
-        recipientAddress: recipient.trim(),
-        faucetId,
-        noteType,
-        amount: baseAmount,
-        recallBlocks,
-      });
-
-      setStatus({ stage: "broadcasting", txId });
-
-      logTx({
-        txId,
-        type: recallable ? "vault" : "send",
-        recipient: recipient.trim(),
-        faucetId,
-        amount,
-        noteType,
-        ts: Date.now(),
-      });
-
-      if (recallable) {
-        const vault = lsLoad<VaultEntry[]>(VAULT_KEY, []);
-        const entry: VaultEntry = {
-          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          recipient: recipient.trim(),
-          faucetId,
-          amount,
-          recallSeconds: recallPreset.seconds,
-          txId,
-          ts: Date.now(),
-        };
-        lsSave(VAULT_KEY, [entry, ...vault]);
-      }
-
-      // Wait for confirmation
-      if (waitForTransaction) {
-        setStatus({ stage: "confirming", txId });
-        try {
-          await waitForTransaction(txId, 60_000);
-          setStatus({ stage: "confirmed", txId });
-        } catch (e) {
-          // confirmation timed out — tx probably still valid, don't hard-fail
-          console.warn("waitForTransaction:", e);
-          setStatus({ stage: "confirmed", txId });
-        }
-      } else {
-        setStatus({ stage: "confirmed", txId });
-      }
-
-      setRecipient("");
-      setAmount("");
-      onSent();
-
-      // Auto-clear success after 8s
-      setTimeout(() => {
-        setStatus((cur) => (cur.txId === txId ? { stage: "idle" } : cur));
-      }, 8000);
-    } catch (e) {
-      setStatus({ stage: "error", error: e instanceof Error ? e.message : String(e) });
-    }
-  };
-
-  return (
-    <div className="card">
-      <h2>Send</h2>
-      <label>Recipient address</label>
-      <input
-        type="text"
-        value={recipient}
-        onChange={(e) => setRecipient(e.target.value)}
-        placeholder="mtst1…"
-        spellCheck={false}
-        disabled={isBusy}
-      />
-
-      <div style={{ display: "grid", gap: "0.8rem", marginTop: "0.8rem" }}>
-        <div>
-          <label>Asset</label>
-          <select
-            value={faucetId}
-            onChange={(e) => setFaucetId(e.target.value)}
-            disabled={assets.length === 0 || isBusy}
-          >
-            {assets.length === 0 && <option value="">— no assets —</option>}
-            {assets.map((a) => (
-              <option key={a.faucetId} value={a.faucetId}>
-                {labelFor(a.faucetId)} · {formatBalance(a.amount)}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <div className="amount-row">
-            <label>Amount</label>
-            {selectedAsset && (
-              <button
-                type="button"
-                className="max-btn"
-                onClick={() => setAmount(selectedBalance.replace(/,/g, ""))}
-                disabled={isBusy}
-              >
-                MAX ({selectedBalance})
-              </button>
-            )}
-          </div>
-          <input
-            type="number"
-            min="0"
-            step="any"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="1.5"
-            disabled={isBusy}
-          />
-        </div>
-
-        <div>
-          <label>Note type</label>
-          <div className="radio-row">
-            <label className="radio">
-              <input type="radio" checked={noteType === "private"} onChange={() => setNoteType("private")} disabled={isBusy} />
-              <span>Private 🔒</span>
-            </label>
-            <label className="radio">
-              <input type="radio" checked={noteType === "public"} onChange={() => setNoteType("public")} disabled={isBusy} />
-              <span>Public 🌐</span>
-            </label>
-          </div>
-        </div>
-
-        <div className="recall-section">
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={recallable}
-              onChange={(e) => setRecallable(e.target.checked)}
-              disabled={isBusy}
-            />
-            <span>🔐 Recallable — recover from wallet if not claimed</span>
-          </label>
-          {recallable && (
-            <div className="recall-presets">
-              {RECALL_PRESETS.map((p) => (
-                <button
-                  key={p.label}
-                  type="button"
-                  className={`preset ${recallPreset.label === p.label ? "active" : ""}`}
-                  onClick={() => setRecallPreset(p)}
-                  disabled={isBusy}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          )}
-          <p className="hint">
-            {recallable
-              ? `Recall inside ${recallPreset.label} via the Vault tab.`
-              : noteType === "private"
-                ? "🔒 Hidden on midenscan. Recipient auto-claims via their wallet."
-                : "🌐 Visible on midenscan. Auto-credited."}
-          </p>
-        </div>
-      </div>
-
-      <button
-        onClick={handleSend}
-        disabled={isBusy || assets.length === 0}
-        style={{ width: "100%", marginTop: "1rem" }}
-      >
-        {isBusy ? "…" : "🚀 Send on-chain"}
-      </button>
-
-      <TxStatusIndicator status={status} />
-    </div>
-  );
+.ratio-bar {
+  display: flex; height: 36px;
+  border-radius: 8px; overflow: hidden;
+  font-size: 0.82rem; font-weight: 600;
+}
+.ratio-priv, .ratio-pub {
+  display: flex; align-items: center; justify-content: center;
+  transition: width 0.4s;
+  min-width: 0;
+}
+.ratio-priv {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: white;
+}
+.ratio-pub {
+  background: rgba(148, 163, 184, 0.2);
+  color: #cbd5e1;
 }
 
-// ─── SWAP TAB ──────────────────────────────────────────────────────────────
-
-function SwapTab({ address, assets, labelFor, requestSend, waitForTransaction, onSent, logTx }: CommonTabProps) {
-  const [counterparty, setCounterparty] = useState("");
-  const [sendFaucet, setSendFaucet] = useState("");
-  const [sendAmount, setSendAmount] = useState("");
-  const [recvFaucet, setRecvFaucet] = useState("");
-  const [recvAmount, setRecvAmount] = useState("");
-  const [status, setStatus] = useState<TxStatus>({ stage: "idle" });
-  const [swaps, setSwaps] = useState<Swap[]>(() => lsLoad(SWAPS_KEY, [] as Swap[]));
-
-  useEffect(() => {
-    if (assets.length > 0 && !sendFaucet) {
-      setSendFaucet(assets[0].faucetId);
-      setRecvFaucet(assets.length > 1 ? assets[1].faucetId : assets[0].faucetId);
-    }
-  }, [assets, sendFaucet]);
-
-  useEffect(() => {
-    lsSave(SWAPS_KEY, swaps);
-  }, [swaps]);
-
-  const isBusy = status.stage !== "idle" && status.stage !== "confirmed" && status.stage !== "error";
-
-  const handleStartSwap = async () => {
-    if (!requestSend) return setStatus({ stage: "error", error: "Wallet not ready" });
-    if (!counterparty.trim()) return setStatus({ stage: "error", error: "Enter counterparty address" });
-    if (counterparty.trim() === address)
-      return setStatus({ stage: "error", error: "Counterparty must be different" });
-    if (!sendFaucet || !recvFaucet) return setStatus({ stage: "error", error: "Select both assets" });
-    const baseSend = toBaseUnits(sendAmount);
-    if (baseSend <= 0) return setStatus({ stage: "error", error: "Enter your sending amount" });
-    if (toBaseUnits(recvAmount) <= 0) return setStatus({ stage: "error", error: "Enter expected amount" });
-
-    setStatus({ stage: "signing" });
-    try {
-      const txId = await requestSend({
-        senderAddress: address,
-        recipientAddress: counterparty.trim(),
-        faucetId: sendFaucet,
-        noteType: "private",
-        amount: baseSend,
-      });
-      setStatus({ stage: "broadcasting", txId });
-      logTx({
-        txId, type: "swap",
-        recipient: counterparty.trim(), faucetId: sendFaucet,
-        amount: sendAmount, noteType: "private", ts: Date.now(),
-      });
-      setSwaps((s) => [
-        {
-          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          counterparty: counterparty.trim(),
-          sendFaucetId: sendFaucet, sendAmount,
-          recvFaucetId: recvFaucet, recvAmount,
-          status: "you_sent", ourTxId: txId, ts: Date.now(),
-        },
-        ...s,
-      ]);
-
-      if (waitForTransaction) {
-        setStatus({ stage: "confirming", txId });
-        try { await waitForTransaction(txId, 60_000); } catch { /* ignore */ }
-      }
-      setStatus({ stage: "confirmed", txId });
-
-      setCounterparty("");
-      setSendAmount("");
-      setRecvAmount("");
-      onSent();
-
-      setTimeout(() => setStatus((cur) => (cur.txId === txId ? { stage: "idle" } : cur)), 8000);
-    } catch (e) {
-      setStatus({ stage: "error", error: e instanceof Error ? e.message : String(e) });
-    }
-  };
-
-  const markCompleted = (id: string) =>
-    setSwaps((arr) => arr.map((s) => (s.id === id ? { ...s, status: "completed" } : s)));
-
-  const removeSwap = (id: string) => {
-    if (!confirm("Remove from list? On-chain tx is NOT reversed.")) return;
-    setSwaps((arr) => arr.filter((s) => s.id !== id));
-  };
-
-  const sendBalance = assets.find((a) => a.faucetId === sendFaucet);
-
-  return (
-    <>
-      <div className="card">
-        <h2>OTC Swap</h2>
-        <div className="banner">
-          <span>🚀 Atomic PSWAP coming when MidenFi wallet supports PSWAP note creation.</span>
-        </div>
-        <p className="hint" style={{ marginBottom: "0.8rem" }}>
-          Current version: trust-based OTC (you send first).
-        </p>
-        <label>Counterparty address</label>
-        <input
-          type="text"
-          value={counterparty}
-          onChange={(e) => setCounterparty(e.target.value)}
-          placeholder="mtst1…"
-          spellCheck={false}
-          disabled={isBusy}
-        />
-
-        <div className="swap-grid">
-          <div className="swap-side">
-            <div className="swap-side-label">You send ↑</div>
-            <select value={sendFaucet} onChange={(e) => setSendFaucet(e.target.value)} disabled={isBusy}>
-              {assets.map((a) => <option key={a.faucetId} value={a.faucetId}>{labelFor(a.faucetId)}</option>)}
-            </select>
-            <input type="number" min="0" step="any" value={sendAmount}
-              onChange={(e) => setSendAmount(e.target.value)} placeholder="10" disabled={isBusy} />
-            {sendBalance && <p className="hint">Balance: {formatBalance(sendBalance.amount)}</p>}
-          </div>
-          <div className="swap-arrow">⇄</div>
-          <div className="swap-side">
-            <div className="swap-side-label">You receive ↓</div>
-            <select value={recvFaucet} onChange={(e) => setRecvFaucet(e.target.value)} disabled={isBusy}>
-              {assets.map((a) => <option key={a.faucetId} value={a.faucetId}>{labelFor(a.faucetId)}</option>)}
-            </select>
-            <input type="number" min="0" step="any" value={recvAmount}
-              onChange={(e) => setRecvAmount(e.target.value)} placeholder="9" disabled={isBusy} />
-            <p className="hint">Expected back</p>
-          </div>
-        </div>
-
-        <button onClick={handleStartSwap} disabled={isBusy || assets.length === 0}
-          style={{ width: "100%", marginTop: "1rem" }}>
-          {isBusy ? "…" : "🔄 Start Swap"}
-        </button>
-        <TxStatusIndicator status={status} />
-      </div>
-
-      {swaps.length > 0 && (
-        <div className="card">
-          <h2>Your Swaps ({swaps.length})</h2>
-          {swaps.map((s) => (
-            <div key={s.id} className={`swap-row status-${s.status}`}>
-              <div className="swap-row-top">
-                <span className="mono">{shortAddr(s.counterparty, 8, 6)}</span>
-                <span className={`badge badge-${s.status}`}>
-                  {s.status === "you_sent" ? "⏳ Waiting" : "✅ Completed"}
-                </span>
-              </div>
-              <div className="swap-row-body">
-                Sent {s.sendAmount} {labelFor(s.sendFaucetId)} · Expect {s.recvAmount} {labelFor(s.recvFaucetId)}
-              </div>
-              {s.ourTxId && (
-                <div className="swap-row-meta">
-                  Tx: <a href={`${EXPLORER_BASE_URL}/tx/${s.ourTxId}`} target="_blank"
-                    rel="noreferrer" className="tx-link">{shortAddr(s.ourTxId, 8, 6)} ↗</a>
-                </div>
-              )}
-              <div className="swap-actions">
-                {s.status === "you_sent" && (
-                  <button className="small primary" onClick={() => markCompleted(s.id)}>
-                    ✓ Mark completed
-                  </button>
-                )}
-                <button className="ghost small" onClick={() => removeSwap(s.id)}>Remove</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </>
-  );
+.barchart {
+  display: flex; flex-direction: column; gap: 0.5rem;
+}
+.bar-row {
+  display: grid;
+  grid-template-columns: 90px 1fr 40px;
+  align-items: center; gap: 0.6rem; font-size: 0.85rem;
+}
+.bar-label { color: #cbd5e1; }
+.bar-track {
+  height: 10px; background: rgba(255, 255, 255, 0.05);
+  border-radius: 5px; overflow: hidden;
+}
+.bar-fill { height: 100%; transition: width 0.4s; border-radius: 5px; }
+.bar-value {
+  text-align: right; color: #94a3b8;
+  font-family: monospace; font-size: 0.82rem;
 }
 
-// ─── AIRDROP TAB ───────────────────────────────────────────────────────────
+.tips {
+  margin: 0; padding-left: 1.2rem;
+  font-size: 0.88rem; color: #cbd5e1; line-height: 1.7;
+}
+.tips li { margin-bottom: 0.3rem; }
 
-function AirdropTab({ address, assets, labelFor, requestSend, waitForTransaction, onSent, logTx }: CommonTabProps) {
-  const [faucetId, setFaucetId] = useState("");
-  const [recipientList, setRecipientList] = useState("");
-  const [defaultAmount, setDefaultAmount] = useState("");
-  const [noteType, setNoteType] = useState<"public" | "private">("private");
-  const [running, setRunning] = useState(false);
-  const [progress, setProgress] = useState({ done: 0, total: 0 });
-  const [results, setResults] = useState<AirdropResult[]>([]);
+/* ── Footer ──────────────────────────────────────────────────────────── */
 
-  useEffect(() => {
-    if (assets.length > 0 && !faucetId) setFaucetId(assets[0].faucetId);
-  }, [assets, faucetId]);
+.footer {
+  margin-top: 2rem; display: flex; justify-content: center;
+  align-items: center; gap: 0.7rem;
+  font-size: 0.8rem; color: #64748b; flex-wrap: wrap;
+}
+.footer .muted { color: #475569; }
 
-  const parsedRecipients = useMemo(() => {
-    const lines = recipientList.split(/\n+/).map((l) => l.trim()).filter(Boolean);
-    return lines.map((line) => {
-      const parts = line.split(/[,\s]+/).filter(Boolean);
-      return { recipient: parts[0], amount: parts[1] || defaultAmount };
-    });
-  }, [recipientList, defaultAmount]);
+/* ── Mobile ──────────────────────────────────────────────────────────── */
 
-  const valid = parsedRecipients.filter(
-    (r) => r.recipient.startsWith("mtst1") && toBaseUnits(r.amount) > 0,
-  );
-
-  const totalAmount = useMemo(
-    () => valid.reduce((sum, r) => sum + parseFloat(r.amount), 0), [valid],
-  );
-
-  const handleAirdrop = async () => {
-    if (!requestSend || valid.length === 0) return;
-
-    setRunning(true);
-    setProgress({ done: 0, total: valid.length });
-    setResults([]);
-
-    // Phase 1: sign & broadcast all (sequential — wallet allows one at a time)
-    const sent: AirdropResult[] = [];
-    for (const r of valid) {
-      try {
-        const txId = await requestSend({
-          senderAddress: address,
-          recipientAddress: r.recipient,
-          faucetId,
-          noteType,
-          amount: toBaseUnits(r.amount),
-        });
-        sent.push({ recipient: r.recipient, amount: r.amount, ok: true, txId, confirmed: false });
-        logTx({
-          txId, type: "airdrop",
-          recipient: r.recipient, faucetId,
-          amount: r.amount, noteType, ts: Date.now(),
-        });
-      } catch (e) {
-        sent.push({
-          recipient: r.recipient, amount: r.amount, ok: false,
-          error: e instanceof Error ? e.message : String(e),
-        });
-      }
-      setResults([...sent]);
-      setProgress((p) => ({ ...p, done: p.done + 1 }));
-    }
-
-    // Phase 2: wait for on-chain confirmations in parallel
-    if (waitForTransaction) {
-      await Promise.all(
-        sent.map(async (r, idx) => {
-          if (!r.ok || !r.txId) return;
-          try {
-            await waitForTransaction(r.txId, 60_000);
-            sent[idx] = { ...sent[idx], confirmed: true };
-            setResults([...sent]);
-          } catch {
-            /* leave as unconfirmed */
-          }
-        }),
-      );
-    }
-
-    setRunning(false);
-    onSent();
-  };
-
-  const okCount = results.filter((r) => r.ok).length;
-  const confirmedCount = results.filter((r) => r.confirmed).length;
-  const errCount = results.filter((r) => !r.ok).length;
-
-  return (
-    <>
-      <div className="card">
-        <h2>🪂 Bulk Private Airdrop</h2>
-        <p className="hint" style={{ marginBottom: "0.8rem" }}>
-          Send to many recipients. Paste <code>address</code> or <code>address,amount</code> per line.
-        </p>
-
-        <label>Asset</label>
-        <select value={faucetId} onChange={(e) => setFaucetId(e.target.value)} disabled={running}>
-          {assets.length === 0 && <option value="">— no assets —</option>}
-          {assets.map((a) => (
-            <option key={a.faucetId} value={a.faucetId}>
-              {labelFor(a.faucetId)} · {formatBalance(a.amount)}
-            </option>
-          ))}
-        </select>
-
-        <div style={{ marginTop: "0.8rem" }}>
-          <label>Default amount</label>
-          <input type="number" min="0" step="any" value={defaultAmount}
-            onChange={(e) => setDefaultAmount(e.target.value)} placeholder="1" disabled={running} />
-        </div>
-
-        <div style={{ marginTop: "0.8rem" }}>
-          <label>Recipients</label>
-          <textarea
-            value={recipientList}
-            onChange={(e) => setRecipientList(e.target.value)}
-            placeholder={`mtst1abc...xyz,5\nmtst1def...uvw\nmtst1ghi...rst,2.5`}
-            rows={6}
-            spellCheck={false}
-            className="recipient-list"
-            disabled={running}
-          />
-        </div>
-
-        <div style={{ marginTop: "0.8rem" }}>
-          <label>Note type</label>
-          <div className="radio-row">
-            <label className="radio">
-              <input type="radio" checked={noteType === "private"} onChange={() => setNoteType("private")} disabled={running} />
-              <span>Private 🔒</span>
-            </label>
-            <label className="radio">
-              <input type="radio" checked={noteType === "public"} onChange={() => setNoteType("public")} disabled={running} />
-              <span>Public 🌐</span>
-            </label>
-          </div>
-        </div>
-
-        <div className="airdrop-summary">
-          <div><strong>{valid.length}</strong> valid recipients</div>
-          <div>Total: <strong>{totalAmount} {labelFor(faucetId)}</strong></div>
-        </div>
-
-        <button onClick={handleAirdrop} disabled={running || valid.length === 0 || !faucetId}
-          style={{ width: "100%", marginTop: "0.8rem" }}>
-          {running
-            ? `Sending… ${progress.done}/${progress.total}`
-            : `🪂 Airdrop to ${valid.length} addresses`}
-        </button>
-
-        {running && (
-          <div className="progress-bar">
-            <div className="progress-fill"
-              style={{ width: `${(progress.done / Math.max(progress.total, 1)) * 100}%` }} />
-          </div>
-        )}
-      </div>
-
-      {results.length > 0 && (
-        <div className="card">
-          <h2>
-            Results
-            <span className="badge badge-completed" style={{ marginLeft: "0.5rem" }}>
-              ✓ {okCount}
-            </span>
-            {confirmedCount > 0 && confirmedCount !== okCount && (
-              <span className="badge badge-completed" style={{ marginLeft: "0.4rem" }}>
-                ⚡ {confirmedCount} confirmed
-              </span>
-            )}
-            {errCount > 0 && (
-              <span className="badge badge-error" style={{ marginLeft: "0.4rem" }}>
-                ✕ {errCount}
-              </span>
-            )}
-          </h2>
-          {results.map((r, i) => (
-            <div key={i} className={`tx-row ${r.ok ? "" : "err"}`}>
-              <div className="tx-row-top">
-                <span style={{ fontSize: "0.85rem" }}>
-                  {r.ok ? (r.confirmed ? "⚡" : "✅") : "❌"} {shortAddr(r.recipient, 10, 6)} · {r.amount}
-                </span>
-                {r.txId && (
-                  <a href={`${EXPLORER_BASE_URL}/tx/${r.txId}`} target="_blank"
-                    rel="noreferrer" className="tx-link">view ↗</a>
-                )}
-              </div>
-              {r.error && <div className="hint" style={{ color: "#fca5a5" }}>{r.error}</div>}
-            </div>
-          ))}
-        </div>
-      )}
-    </>
-  );
+@media (max-width: 540px) {
+  .app { padding: 1.2rem 1rem 3rem; }
+  .app h1 { font-size: 1.3rem; }
+  .swap-grid { grid-template-columns: 1fr; }
+  .swap-arrow { margin: 0; transform: rotate(90deg); text-align: center; }
+  .stat-grid { grid-template-columns: repeat(2, 1fr); }
+  .privacy-score-wrap { flex-direction: column; gap: 0.5rem; }
+  .icon-btn { font-size: 0.78rem; padding: 0.35rem 0.6rem; }
+  .tab { font-size: 0.78rem; padding: 0.5rem 0.4rem; }
+  .bar-row { grid-template-columns: 75px 1fr 35px; gap: 0.4rem; font-size: 0.8rem; }
 }
 
-// ─── VAULT TAB ─────────────────────────────────────────────────────────────
+/* ── PSWAP / Bridge / Guardian (v0.15) ─────────────────────────────────── */
 
-interface VaultTabProps {
-  labelFor: (faucetId: string) => string;
-  requestConsume: ReturnType<typeof useMidenFiWallet>["requestConsume"];
-  requestConsumableNotes: ReturnType<typeof useMidenFiWallet>["requestConsumableNotes"];
-  waitForTransaction: ReturnType<typeof useMidenFiWallet>["waitForTransaction"];
-  onRecalled: () => void;
-  logTx: (entry: TxLogEntry) => void;
+.banner-good {
+  border-color: rgba(52, 211, 153, 0.35);
+  background: rgba(16, 185, 129, 0.1);
+  color: #6ee7b7;
 }
 
-function VaultTab({
-  labelFor, requestConsume, requestConsumableNotes, waitForTransaction, onRecalled, logTx,
-}: VaultTabProps) {
-  const [vault, setVault] = useState<VaultEntry[]>(() => lsLoad(VAULT_KEY, [] as VaultEntry[]));
-  const [inbox, setInbox] = useState<InputNoteDetails[]>([]);
-  const [loadingInbox, setLoadingInbox] = useState(false);
-  const [inboxError, setInboxError] = useState<string | null>(null);
-  const [recallingId, setRecallingId] = useState<string | null>(null);
-  const [recallStatus, setRecallStatus] = useState<TxStatus>({ stage: "idle" });
-  const [now, setNow] = useState(Date.now());
-
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
-
-  const refreshInbox = useCallback(async () => {
-    if (!requestConsumableNotes) return;
-    setLoadingInbox(true);
-    setInboxError(null);
-    try {
-      const list = await requestConsumableNotes();
-      setInbox(list);
-    } catch (e) {
-      setInboxError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoadingInbox(false);
-    }
-  }, [requestConsumableNotes]);
-
-  useEffect(() => { refreshInbox(); }, [refreshInbox]);
-
-  const removeEntry = (id: string) => {
-    if (!confirm("Remove from vault?")) return;
-    const next = vault.filter((v) => v.id !== id);
-    setVault(next);
-    lsSave(VAULT_KEY, next);
-  };
-
-  const consumeNote = async (note: InputNoteDetails) => {
-    if (!requestConsume) return;
-    setRecallingId(note.noteId);
-    setRecallStatus({ stage: "signing" });
-    try {
-      const firstAsset = note.assets[0];
-      if (!firstAsset) throw new Error("Note has no assets");
-
-      const txId = await requestConsume({
-        faucetId: firstAsset.faucetId,
-        noteId: note.noteId,
-        noteType: (note.noteType as unknown as "public" | "private") ?? "private",
-        amount: Number(firstAsset.amount),
-      });
-      setRecallStatus({ stage: "broadcasting", txId });
-      logTx({
-        txId, type: "recall",
-        recipient: "self", faucetId: firstAsset.faucetId,
-        amount: firstAsset.amount, noteType: "private", ts: Date.now(),
-      });
-
-      if (waitForTransaction) {
-        setRecallStatus({ stage: "confirming", txId });
-        try { await waitForTransaction(txId, 60_000); } catch { /* ignore */ }
-      }
-      setRecallStatus({ stage: "confirmed", txId });
-
-      // Mark corresponding vault entry (if any) as recalled
-      const matchingEntry = vault.find(
-        (v) => !v.recalled && v.faucetId === firstAsset.faucetId,
-      );
-      if (matchingEntry) {
-        const next = vault.map((v) =>
-          v.id === matchingEntry.id ? { ...v, recalled: true, recallTxId: txId } : v,
-        );
-        setVault(next);
-        lsSave(VAULT_KEY, next);
-      }
-
-      onRecalled();
-      refreshInbox();
-
-      setTimeout(() => {
-        setRecallStatus({ stage: "idle" });
-        setRecallingId(null);
-      }, 6000);
-    } catch (e) {
-      setRecallStatus({ stage: "error", error: e instanceof Error ? e.message : String(e) });
-      setTimeout(() => {
-        setRecallStatus({ stage: "idle" });
-        setRecallingId(null);
-      }, 5000);
-    }
-  };
-
-  return (
-    <>
-      <div className="card">
-        <h2>🔐 Vault — Recallable Transfers</h2>
-        <p className="hint" style={{ marginBottom: "0.5rem" }}>
-          Track notes you sent with a recall window. When ready, reclaim them
-          right from here — no need to open the wallet.
-        </p>
-      </div>
-
-      {vault.length === 0 && (
-        <div className="card">
-          <p className="empty">
-            No recallable transfers yet. From Send tab, enable{" "}
-            <strong>Recallable</strong> before sending.
-          </p>
-        </div>
-      )}
-
-      {vault.map((v) => {
-        const elapsed = (now - v.ts) / 1000;
-        const remaining = v.recallSeconds - elapsed;
-        const expired = remaining <= 0;
-        return (
-          <div key={v.id} className={`card vault-row ${expired ? "vault-expired" : ""}`}>
-            <div className="vault-top">
-              <div>
-                <div style={{ fontWeight: 600 }}>
-                  {v.amount} {labelFor(v.faucetId)}
-                </div>
-                <div className="mono" style={{ fontSize: "0.78rem", color: "#94a3b8" }}>
-                  → {shortAddr(v.recipient, 10, 6)}
-                </div>
-              </div>
-              <span className={`badge ${expired ? "badge-completed" : "badge-you_sent"}`}>
-                {v.recalled
-                  ? "✅ Recalled"
-                  : expired
-                    ? "⚡ Recallable"
-                    : `⏳ ${formatDuration(remaining)}`}
-              </span>
-            </div>
-
-            {!v.recalled && !expired && (
-              <div className="countdown-bar">
-                <div className="countdown-fill"
-                  style={{ width: `${(elapsed / v.recallSeconds) * 100}%` }} />
-              </div>
-            )}
-
-            <div className="vault-meta">
-              Send tx:{" "}
-              <a href={`${EXPLORER_BASE_URL}/tx/${v.txId}`} target="_blank" rel="noreferrer" className="tx-link">
-                {shortAddr(v.txId, 8, 6)} ↗
-              </a>
-              {v.recallTxId && (
-                <>
-                  {" "}· Recall tx:{" "}
-                  <a href={`${EXPLORER_BASE_URL}/tx/${v.recallTxId}`} target="_blank" rel="noreferrer" className="tx-link">
-                    {shortAddr(v.recallTxId, 8, 6)} ↗
-                  </a>
-                </>
-              )}
-            </div>
-
-            <div className="swap-actions">
-              <button className="ghost small" onClick={() => removeEntry(v.id)}>
-                Remove
-              </button>
-            </div>
-          </div>
-        );
-      })}
-
-      {/* Reclaimable notes from wallet */}
-      <div className="card">
-        <div className="card-head">
-          <h2>📥 Reclaimable Notes</h2>
-          <button className="ghost" onClick={refreshInbox} disabled={loadingInbox}>
-            {loadingInbox ? "…" : "↻"}
-          </button>
-        </div>
-        <p className="hint" style={{ marginBottom: "0.5rem" }}>
-          Notes your wallet can consume right now — including expired recallable transfers you sent.
-        </p>
-
-        {inboxError && <div className="error-box">{inboxError}</div>}
-
-        {inbox.length === 0 && !loadingInbox && (
-          <p className="empty">No notes waiting to be consumed.</p>
-        )}
-
-        {inbox.map((note) => {
-          const isRecalling = recallingId === note.noteId;
-          const firstAsset = note.assets[0];
-          return (
-            <div key={note.noteId} className="tx-row">
-              <div className="tx-row-top">
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.15rem" }}>
-                  <span style={{ fontWeight: 600 }}>
-                    {firstAsset ? `${formatBalance(firstAsset.amount)} ${labelFor(firstAsset.faucetId)}` : "—"}
-                  </span>
-                  <span className="mono" style={{ fontSize: "0.72rem", color: "#94a3b8" }}>
-                    {shortAddr(note.noteId, 10, 6)}
-                  </span>
-                </div>
-                <button
-                  className="small primary"
-                  onClick={() => consumeNote(note)}
-                  disabled={isRecalling || !firstAsset}
-                >
-                  {isRecalling ? "…" : "🔓 Reclaim"}
-                </button>
-              </div>
-              {isRecalling && recallStatus.stage !== "idle" && (
-                <TxStatusIndicator status={recallStatus} />
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </>
-  );
+.guardian-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 0.75rem; padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 0.88rem;
 }
-
-// ─── PRIVACY TAB ───────────────────────────────────────────────────────────
-
-function PrivacyTab({
-  txLog, labelFor,
-}: {
-  txLog: TxLogEntry[];
-  labelFor: (faucetId: string) => string;
-}) {
-  const stats = useMemo(() => {
-    const total = txLog.length;
-    const priv = txLog.filter((t) => t.noteType === "private").length;
-    const pub = total - priv;
-    const uniqueRecipients = new Set(txLog.map((t) => t.recipient)).size;
-    const uniqueAssets = new Set(txLog.map((t) => t.faucetId)).size;
-    const last7days = txLog.filter((t) => t.ts > Date.now() - 7 * 86400_000).length;
-    const ratio = total > 0 ? priv / total : 0;
-    const base = ratio * 60;
-    const diversityBonus = Math.min(uniqueRecipients * 2, 20);
-    const volumeBonus = Math.min(total * 1, 20);
-    const score = Math.round(base + diversityBonus + volumeBonus);
-    return { total, priv, pub, uniqueRecipients, uniqueAssets, last7days, score, ratio };
-  }, [txLog]);
-
-  const typeCount = useMemo(() => {
-    const c: Record<string, number> = { send: 0, swap: 0, airdrop: 0, vault: 0, recall: 0 };
-    txLog.forEach((t) => { c[t.type] = (c[t.type] || 0) + 1; });
-    return c;
-  }, [txLog]);
-
-  const assetBreakdown = useMemo(() => {
-    const map: Record<string, number> = {};
-    txLog.forEach((t) => { map[t.faucetId] = (map[t.faucetId] || 0) + 1; });
-    return Object.entries(map)
-      .map(([fid, count]) => ({ fid, count, label: labelFor(fid) }))
-      .sort((a, b) => b.count - a.count);
-  }, [txLog, labelFor]);
-
-  const scoreColor = stats.score >= 80 ? "#4ade80" : stats.score >= 50 ? "#fbbf24" : "#fca5a5";
-  const scoreLabel = stats.score >= 80 ? "Excellent" : stats.score >= 50 ? "Good" : "Room to improve";
-
-  if (stats.total === 0) {
-    return (
-      <div className="card">
-        <h2>📊 Privacy Dashboard</h2>
-        <p className="empty">Send a few transactions first — your privacy metrics will appear here.</p>
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <div className="card privacy-hero">
-        <div className="privacy-score-wrap">
-          <ScoreRing value={stats.score} color={scoreColor} />
-          <div>
-            <div className="privacy-label">Privacy Score</div>
-            <div className="privacy-value" style={{ color: scoreColor }}>{stats.score}/100</div>
-            <div className="privacy-sub">{scoreLabel}</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="stat-grid">
-        <Stat label="Total tx" value={stats.total} />
-        <Stat label="Private" value={stats.priv} color="#818cf8" />
-        <Stat label="Public" value={stats.pub} color="#94a3b8" />
-        <Stat label="Recipients" value={stats.uniqueRecipients} />
-        <Stat label="Assets" value={stats.uniqueAssets} />
-        <Stat label="Last 7d" value={stats.last7days} />
-      </div>
-
-      <div className="card">
-        <h2>Private vs Public</h2>
-        <RatioBar priv={stats.priv} pub={stats.pub} />
-        <p className="hint" style={{ marginTop: "0.5rem" }}>
-          {Math.round(stats.ratio * 100)}% of your transactions use private notes.
-        </p>
-      </div>
-
-      <div className="card">
-        <h2>Activity by type</h2>
-        <BarChart data={[
-          { label: "💸 Send", value: typeCount.send, color: "#6366f1" },
-          { label: "🔄 Swap", value: typeCount.swap, color: "#8b5cf6" },
-          { label: "🪂 Airdrop", value: typeCount.airdrop, color: "#ec4899" },
-          { label: "🔐 Vault", value: typeCount.vault, color: "#f59e0b" },
-          { label: "↩️ Recall", value: typeCount.recall, color: "#22c55e" },
-        ]} />
-      </div>
-
-      {assetBreakdown.length > 0 && (
-        <div className="card">
-          <h2>Top assets</h2>
-          {assetBreakdown.slice(0, 5).map((a) => (
-            <div key={a.fid} className="asset">
-              <span className={a.label.length <= 8 ? "asset-symbol" : "mono"}>{a.label}</span>
-              <span className="amount">{a.count} tx</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="card">
-        <h2>Tips to improve privacy</h2>
-        <ul className="tips">
-          {stats.ratio < 0.8 && <li>Use <strong>Private</strong> notes by default.</li>}
-          {stats.uniqueRecipients < 5 && <li>Send to more distinct addresses to grow your anonymity set.</li>}
-          {stats.uniqueAssets < 2 && <li>Try using multiple assets — diversity increases unlinkability.</li>}
-          {stats.total < 10 && <li>Reach 10+ transactions for stronger privacy heuristics.</li>}
-          <li>Enable <strong>Recallable</strong> on large transfers.</li>
-        </ul>
-      </div>
-    </>
-  );
-}
-
-// ─── Small visual primitives ───────────────────────────────────────────────
-
-function Stat({ label, value, color }: { label: string; value: number; color?: string }) {
-  return (
-    <div className="stat">
-      <div className="stat-value" style={color ? { color } : undefined}>{value}</div>
-      <div className="stat-label">{label}</div>
-    </div>
-  );
-}
-
-function ScoreRing({ value, color }: { value: number; color: string }) {
-  const radius = 38;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (value / 100) * circumference;
-  return (
-    <svg width="96" height="96" className="score-ring">
-      <circle cx="48" cy="48" r={radius} stroke="rgba(255,255,255,0.08)" strokeWidth="8" fill="none" />
-      <circle
-        cx="48" cy="48" r={radius} stroke={color} strokeWidth="8" fill="none"
-        strokeDasharray={circumference} strokeDashoffset={offset}
-        strokeLinecap="round" transform="rotate(-90 48 48)"
-        style={{ transition: "stroke-dashoffset 0.6s ease" }}
-      />
-      <text x="48" y="55" textAnchor="middle" fontSize="20" fontWeight="700" fill={color}>{value}</text>
-    </svg>
-  );
-}
-
-function RatioBar({ priv, pub }: { priv: number; pub: number }) {
-  const total = priv + pub;
-  if (total === 0) return null;
-  const privPct = (priv / total) * 100;
-  return (
-    <div className="ratio-bar">
-      <div className="ratio-priv" style={{ width: `${privPct}%` }}>🔒 {priv}</div>
-      <div className="ratio-pub" style={{ width: `${100 - privPct}%` }}>🌐 {pub}</div>
-    </div>
-  );
-}
-
-function BarChart({ data }: { data: { label: string; value: number; color: string }[] }) {
-  const max = Math.max(...data.map((d) => d.value), 1);
-  return (
-    <div className="barchart">
-      {data.map((d) => (
-        <div key={d.label} className="bar-row">
-          <div className="bar-label">{d.label}</div>
-          <div className="bar-track">
-            <div className="bar-fill" style={{ width: `${(d.value / max) * 100}%`, background: d.color }} />
-          </div>
-          <div className="bar-value">{d.value}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
+.guardian-row:last-of-type { border-bottom: none; }
+.guardian-label { color: #94a3b8; font-size: 0.82rem; }
