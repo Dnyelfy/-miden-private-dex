@@ -108,6 +108,42 @@ interface VaultEntry {
   recallTxId?: string;
 }
 
+interface PaymentRequest {
+  to: string;
+  amount: string;
+  faucetId: string;
+  memo: string;
+}
+
+// Parse a "private payment request" from the current URL query string.
+// Format: ?to=<mtst1…>&amt=<display>&faucet=<faucetId>&memo=<text>
+function parsePaymentRequest(): PaymentRequest | null {
+  try {
+    const p = new URLSearchParams(window.location.search);
+    const to = (p.get("to") || "").trim();
+    if (!to) return null;
+    return {
+      to,
+      amount: (p.get("amt") || "").trim(),
+      faucetId: (p.get("faucet") || "").trim(),
+      memo: (p.get("memo") || "").trim().slice(0, 120),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildRequestLink(req: PaymentRequest): string {
+  const origin =
+    typeof window !== "undefined" ? window.location.origin + window.location.pathname : "";
+  const p = new URLSearchParams();
+  p.set("to", req.to);
+  if (req.amount) p.set("amt", req.amount);
+  if (req.faucetId) p.set("faucet", req.faucetId);
+  if (req.memo) p.set("memo", req.memo);
+  return `${origin}?${p.toString()}`;
+}
+
 interface TxLogEntry {
   txId: string;
   type: "send" | "swap" | "airdrop" | "vault" | "recall";
@@ -157,6 +193,7 @@ export function AppContent() {
     waitForTransaction,
   } = wallet;
 
+  const [paymentRequest] = useState<PaymentRequest | null>(() => parsePaymentRequest());
   const [tab, setTab] = useState<Tab>("send");
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loadingAssets, setLoadingAssets] = useState(false);
@@ -358,6 +395,7 @@ export function AppContent() {
               waitForTransaction={waitForTransaction}
               onSent={loadAssets}
               logTx={logTx}
+              prefill={paymentRequest}
             />
           )}
           {tab === "swap" && (
@@ -529,14 +567,19 @@ interface CommonTabProps {
 
 // ─── SEND TAB ──────────────────────────────────────────────────────────────
 
-function SendTab({ address, assets, labelFor, requestSend, waitForTransaction, onSent, logTx }: CommonTabProps) {
-  const [recipient, setRecipient] = useState("");
-  const [amount, setAmount] = useState("");
-  const [faucetId, setFaucetId] = useState("");
+function SendTab({
+  address, assets, labelFor, requestSend, waitForTransaction, onSent, logTx, prefill,
+}: CommonTabProps & { prefill?: PaymentRequest | null }) {
+  const [mode, setMode] = useState<"send" | "request">("send");
+  const [recipient, setRecipient] = useState(prefill?.to ?? "");
+  const [amount, setAmount] = useState(prefill?.amount ?? "");
+  const [faucetId, setFaucetId] = useState(prefill?.faucetId ?? "");
   const [noteType, setNoteType] = useState<"public" | "private">("private");
   const [recallable, setRecallable] = useState(false);
   const [recallPreset, setRecallPreset] = useState(RECALL_PRESETS[1]);
   const [status, setStatus] = useState<TxStatus>({ stage: "idle" });
+  // Dismissable banner shown when the page was opened from a payment-request link.
+  const [showPrefillBanner, setShowPrefillBanner] = useState(!!prefill?.to);
 
   useEffect(() => {
     if (assets.length > 0 && !faucetId) setFaucetId(assets[0].faucetId);
@@ -622,8 +665,50 @@ function SendTab({ address, assets, labelFor, requestSend, waitForTransaction, o
     }
   };
 
+  if (mode === "request") {
+    return (
+      <RequestBuilder
+        address={address}
+        assets={assets}
+        labelFor={labelFor}
+        onBack={() => setMode("send")}
+      />
+    );
+  }
+
   return (
     <div className="card">
+      <div className="send-mode-tabs">
+        <button
+          className={`send-mode-btn ${mode === "send" ? "active" : ""}`}
+          onClick={() => setMode("send")}
+        >
+          💸 Send
+        </button>
+        <button
+          className="send-mode-btn"
+          onClick={() => setMode("request")}
+        >
+          🧾 Request
+        </button>
+      </div>
+
+      {showPrefillBanner && prefill?.to && (
+        <div className="request-banner">
+          <div className="request-banner-body">
+            <strong>🧾 Payment request</strong>
+            <span>
+              {prefill.amount ? `${prefill.amount} ` : ""}
+              {prefill.faucetId ? labelFor(prefill.faucetId) : ""} to{" "}
+              <span className="mono">{shortAddr(prefill.to, 10, 6)}</span>
+            </span>
+            {prefill.memo && <em className="request-memo">“{prefill.memo}”</em>}
+            <span className="request-banner-hint">Fields below are pre-filled — review and send privately.</span>
+          </div>
+          <button className="ghost small" onClick={() => setShowPrefillBanner(false)}>×</button>
+        </div>
+      )}
+
       <h2>Send</h2>
       <label>Recipient address</label>
       <input
@@ -735,6 +820,123 @@ function SendTab({ address, assets, labelFor, requestSend, waitForTransaction, o
       </button>
 
       <TxStatusIndicator status={status} />
+    </div>
+  );
+}
+
+// ─── REQUEST BUILDER (private payment request links) ───────────────────────
+
+function RequestBuilder({
+  address, assets, labelFor, onBack,
+}: {
+  address: string;
+  assets: Asset[];
+  labelFor: (faucetId: string) => string;
+  onBack: () => void;
+}) {
+  const [amount, setAmount] = useState("");
+  const [faucetId, setFaucetId] = useState("");
+  const [memo, setMemo] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (assets.length > 0 && !faucetId) setFaucetId(assets[0].faucetId);
+  }, [assets, faucetId]);
+
+  const link = useMemo(
+    () => buildRequestLink({ to: address, amount: amount.trim(), faucetId, memo: memo.trim() }),
+    [address, amount, faucetId, memo],
+  );
+
+  const copyLink = () => {
+    navigator.clipboard.writeText(link).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    });
+  };
+
+  const shareOnTwitter = () => {
+    const label = faucetId ? labelFor(faucetId) : "";
+    const text = encodeURIComponent(
+      `Pay me privately on @0xMiden 🔒${amount ? ` — ${amount} ${label}` : ""}${memo ? ` for ${memo}` : ""}`,
+    );
+    window.open(
+      `https://twitter.com/intent/tweet?text=${text}&url=${encodeURIComponent(link)}`,
+      "_blank",
+    );
+  };
+
+  return (
+    <div className="card">
+      <div className="send-mode-tabs">
+        <button className="send-mode-btn" onClick={onBack}>💸 Send</button>
+        <button className="send-mode-btn active">🧾 Request</button>
+      </div>
+
+      <h2>Request a private payment</h2>
+      <p className="hint" style={{ marginBottom: "0.8rem" }}>
+        Generate a link. Whoever opens it lands on the Send tab with your address,
+        amount and memo pre-filled — and pays you with a private note. No amount ever
+        touches a public URL preview beyond what you share.
+      </p>
+
+      <div style={{ display: "grid", gap: "0.8rem" }}>
+        <div>
+          <label>Asset</label>
+          <select
+            value={faucetId}
+            onChange={(e) => setFaucetId(e.target.value)}
+            disabled={assets.length === 0}
+          >
+            {assets.length === 0 && <option value="">— no assets —</option>}
+            {assets.map((a) => (
+              <option key={a.faucetId} value={a.faucetId}>
+                {labelFor(a.faucetId)}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label>Amount (optional)</label>
+          <input
+            type="number"
+            min="0"
+            step="any"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="Leave blank to let payer decide"
+          />
+        </div>
+
+        <div>
+          <label>Memo (optional)</label>
+          <input
+            type="text"
+            value={memo}
+            onChange={(e) => setMemo(e.target.value.slice(0, 120))}
+            placeholder="e.g. Invoice #42"
+            maxLength={120}
+          />
+        </div>
+      </div>
+
+      <div className="request-link-box">
+        <label>Your request link</label>
+        <div className="request-link-value mono">{link}</div>
+      </div>
+
+      <div className="swap-actions" style={{ marginTop: "0.8rem" }}>
+        <button className="primary" onClick={copyLink} style={{ flex: 1 }}>
+          {copied ? "✅ Copied!" : "🔗 Copy link"}
+        </button>
+        <button className="ghost" onClick={shareOnTwitter}>𝕏 Share</button>
+      </div>
+
+      <p className="hint" style={{ marginTop: "0.6rem" }}>
+        Requests to <span className="mono">{shortAddr(address, 10, 6)}</span> · payer keeps full
+        control until they sign.
+      </p>
     </div>
   );
 }
@@ -1337,6 +1539,147 @@ function AirdropTab({ address, assets, labelFor, requestSend, waitForTransaction
   );
 }
 
+// ─── GUARDIAN RECOVERY WALKTHROUGH (interactive explainer) ─────────────────
+
+type KeyId = "hot" | "cold" | "guardian";
+
+interface RecoveryScenario {
+  id: string;
+  title: string;
+  subtitle: string;
+  signers: KeyId[];
+  steps: string[];
+  outcome: string;
+}
+
+const RECOVERY_SCENARIOS: RecoveryScenario[] = [
+  {
+    id: "lost-hot",
+    title: "Lost hot key",
+    subtitle: "Phone gone, daily signing key unavailable",
+    signers: ["cold", "guardian"],
+    steps: [
+      "Hot key is unreachable — you can no longer sign day-to-day.",
+      "You bring your offline cold key out of storage.",
+      "Cold key + Guardian policy key together meet the 2-of-3 threshold.",
+      "They co-sign an auth-update rotating in a fresh hot key.",
+    ],
+    outcome: "Account recovered with a new hot key. No funds moved by anyone alone.",
+  },
+  {
+    id: "stolen",
+    title: "Device stolen",
+    subtitle: "Attacker has your phone / hot key",
+    signers: ["cold", "guardian"],
+    steps: [
+      "Attacker holds the hot key but that is only 1 of 3.",
+      "A single key cannot move funds — the 2-of-3 policy blocks it.",
+      "You act first: cold key + Guardian co-sign a rotation.",
+      "The stolen hot key is revoked before it can be paired with a second key.",
+    ],
+    outcome: "Compromised key neutralised. Attacker is locked out.",
+  },
+  {
+    id: "drop-guardian",
+    title: "Drop the Guardian",
+    subtitle: "Move to pure self-custody, no operator",
+    signers: ["hot", "cold"],
+    steps: [
+      "You decide you no longer want an operator in the policy.",
+      "Hot key + cold key together already satisfy 2-of-3.",
+      "They co-sign an auth-update that removes the Guardian policy key.",
+      "The account continues under keys you fully control.",
+    ],
+    outcome: "Guardian removed. You never depended on it to exit — that is the point.",
+  },
+];
+
+const KEY_META: Record<KeyId, { label: string; icon: string; note: string }> = {
+  hot: { label: "Hot key", icon: "📱", note: "daily signing" },
+  cold: { label: "Cold key", icon: "🧊", note: "offline backup" },
+  guardian: { label: "Guardian", icon: "🛡️", note: "policy co-signer" },
+};
+
+function GuardianRecoveryDemo() {
+  const [scenarioId, setScenarioId] = useState(RECOVERY_SCENARIOS[0].id);
+  const [step, setStep] = useState(0);
+  const scenario = RECOVERY_SCENARIOS.find((s) => s.id === scenarioId)!;
+  const revealed = step >= scenario.steps.length;
+
+  const pick = (id: string) => { setScenarioId(id); setStep(0); };
+
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h2>🔁 Recovery walkthrough</h2>
+        <span className="badge badge-you_sent">demo</span>
+      </div>
+      <p className="hint" style={{ marginBottom: "0.7rem" }}>
+        How a 2-of-3 Guardian account survives a lost or stolen key. This is an
+        interactive explainer, not an on-chain action.
+      </p>
+
+      <div className="scenario-tabs">
+        {RECOVERY_SCENARIOS.map((s) => (
+          <button
+            key={s.id}
+            className={`scenario-tab ${s.id === scenarioId ? "active" : ""}`}
+            onClick={() => pick(s.id)}
+          >
+            {s.title}
+          </button>
+        ))}
+      </div>
+
+      <p className="scenario-sub">{scenario.subtitle}</p>
+
+      <div className="key-triad">
+        {(["hot", "cold", "guardian"] as KeyId[]).map((k) => {
+          const signing = scenario.signers.includes(k);
+          const active = signing && step > 0;
+          return (
+            <div key={k} className={`key-chip ${active ? "key-signing" : ""} ${!signing ? "key-idle" : ""}`}>
+              <span className="key-icon">{KEY_META[k].icon}</span>
+              <span className="key-name">{KEY_META[k].label}</span>
+              <span className="key-note">{KEY_META[k].note}</span>
+              {active && <span className="key-badge">signs ✍️</span>}
+            </div>
+          );
+        })}
+      </div>
+      <div className="threshold-line">
+        <span className="threshold-pill">
+          {step > 0 ? `${scenario.signers.length}-of-3 threshold met ✅` : "2-of-3 policy · any single key is powerless"}
+        </span>
+      </div>
+
+      <ol className="recovery-steps">
+        {scenario.steps.map((s, i) => (
+          <li key={i} className={i < step ? "step-done" : i === step ? "step-current" : "step-pending"}>
+            {s}
+          </li>
+        ))}
+      </ol>
+
+      {revealed && (
+        <div className="recovery-outcome">✅ {scenario.outcome}</div>
+      )}
+
+      <div className="swap-actions" style={{ marginTop: "0.8rem" }}>
+        {!revealed ? (
+          <button className="primary" onClick={() => setStep((s) => s + 1)} style={{ flex: 1 }}>
+            {step === 0 ? "▶ Start walkthrough" : "Next step →"}
+          </button>
+        ) : (
+          <button className="ghost" onClick={() => setStep(0)} style={{ flex: 1 }}>
+            ↺ Replay
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── VAULT TAB ─────────────────────────────────────────────────────────────
 
 interface VaultTabProps {
@@ -1540,6 +1883,8 @@ function VaultTab({
           </>
         )}
       </div>
+
+      <GuardianRecoveryDemo />
 
       <div className="card">
         <h2>🔐 Vault — Recallable Transfers</h2>
