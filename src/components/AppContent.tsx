@@ -6,17 +6,6 @@ import type {
   InputNoteDetails,
 } from "@miden-sdk/miden-wallet-adapter-base";
 import {
-  useBridge,
-  usePswapCancel,
-  usePswapConsume,
-  usePswapCreate,
-  usePswapLineages,
-  type PswapLineageRecord,
-} from "@miden-sdk/react";
-import {
-  BRIDGE_ACCOUNT_ID,
-  BRIDGE_MONITOR_URL,
-  BRIDGE_NETWORKS,
   EXPLORER_BASE_URL,
 } from "@/config";
 import "./AppContent.css";
@@ -173,7 +162,7 @@ interface TxStatus {
 
 // ─── Main ──────────────────────────────────────────────────────────────────
 
-type Tab = "send" | "swap" | "bridge" | "airdrop" | "vault" | "privacy";
+type Tab = "send" | "airdrop" | "vault" | "privacy";
 
 export function AppContent() {
   const wallet = useMidenFiWallet();
@@ -271,7 +260,7 @@ export function AppContent() {
 
   const shareOnTwitter = () => {
     const text = encodeURIComponent(
-      `🔒 Check out this private dApp on @0xMiden testnet — send, swap, bulk-airdrop, time-locked vault & privacy analytics, all ZK 👇`,
+      `🔒 Check out this private dApp on @0xMiden testnet — send, bulk-airdrop, time-locked vault & privacy analytics, all ZK 👇`,
     );
     const url = encodeURIComponent("https://miden-private-dex.vercel.app/");
     window.open(
@@ -295,7 +284,7 @@ export function AppContent() {
           </div>
         </div>
         <p className="subtitle">
-          Private send · atomic PSWAP · Agglayer bridge · bulk airdrop · time-locked vault ·
+          Private send · bulk airdrop · time-locked vault ·
           privacy analytics on{" "}
           <span className="badge-net">Miden Testnet v0.15</span>
         </p>
@@ -337,8 +326,6 @@ export function AppContent() {
 
           <div className="tabs">
             <TabBtn label="💸 Send" active={tab === "send"} onClick={() => setTab("send")} />
-            <TabBtn label="🔄 Swap" active={tab === "swap"} onClick={() => setTab("swap")} />
-            <TabBtn label="🌉 Bridge" active={tab === "bridge"} onClick={() => setTab("bridge")} />
             <TabBtn label="🪂 Airdrop" active={tab === "airdrop"} onClick={() => setTab("airdrop")} />
             <TabBtn label="🔐 Vault" active={tab === "vault"} onClick={() => setTab("vault")} />
             <TabBtn label="📊 Privacy" active={tab === "privacy"} onClick={() => setTab("privacy")} />
@@ -396,24 +383,6 @@ export function AppContent() {
               onSent={loadAssets}
               logTx={logTx}
               prefill={paymentRequest}
-            />
-          )}
-          {tab === "swap" && (
-            <SwapTab
-              address={address!}
-              assets={assets}
-              labelFor={labelFor}
-              onSent={loadAssets}
-              logTx={logTx}
-            />
-          )}
-          {tab === "bridge" && (
-            <BridgeTab
-              address={address!}
-              assets={assets}
-              labelFor={labelFor}
-              onSent={loadAssets}
-              logTx={logTx}
             />
           )}
           {tab === "airdrop" && (
@@ -941,406 +910,6 @@ function RequestBuilder({
   );
 }
 
-// ─── SWAP TAB ──────────────────────────────────────────────────────────────
-
-interface SwapTabProps {
-  address: string;
-  assets: Asset[];
-  labelFor: (faucetId: string) => string;
-  onSent: () => void;
-  logTx: (entry: TxLogEntry) => void;
-}
-
-const PSWAP_STATE_LABEL: Record<number, string> = {
-  0: "Active",
-  1: "Filled",
-  2: "Reclaimed",
-};
-
-function noteIdString(v: unknown): string {
-  try {
-    return String(v);
-  } catch {
-    return "";
-  }
-}
-
-function SwapTab({ address, assets, labelFor, onSent, logTx }: SwapTabProps) {
-  const [offerFaucet, setOfferFaucet] = useState("");
-  const [offerAmount, setOfferAmount] = useState("");
-  const [wantFaucet, setWantFaucet] = useState("");
-  const [wantAmount, setWantAmount] = useState("");
-  const [visibility, setVisibility] = useState<"private" | "public">("private");
-  const [status, setStatus] = useState<TxStatus>({ stage: "idle" });
-
-  const [fillNoteId, setFillNoteId] = useState("");
-  const [fillAmount, setFillAmount] = useState("");
-  const [fillStatus, setFillStatus] = useState<TxStatus>({ stage: "idle" });
-
-  const [cancellingId, setCancellingId] = useState<string | null>(null);
-
-  const { pswapCreate } = usePswapCreate();
-  const { pswapConsume } = usePswapConsume();
-  const { pswapCancel } = usePswapCancel();
-  const { lineages, isLoading: loadingOrders, refetch: refetchOrders } = usePswapLineages();
-
-  useEffect(() => {
-    if (assets.length > 0 && !offerFaucet) {
-      setOfferFaucet(assets[0].faucetId);
-      setWantFaucet(assets.length > 1 ? assets[1].faucetId : assets[0].faucetId);
-    }
-  }, [assets, offerFaucet]);
-
-  const isBusy = status.stage !== "idle" && status.stage !== "confirmed" && status.stage !== "error";
-  const isFilling = fillStatus.stage !== "idle" && fillStatus.stage !== "confirmed" && fillStatus.stage !== "error";
-
-  const myOrders = useMemo(
-    () => lineages.filter((l: PswapLineageRecord) => Number(l.state()) === 0 || Number(l.state()) === 1),
-    [lineages],
-  );
-
-  const handleCreateOrder = async () => {
-    if (!offerFaucet || !wantFaucet) return setStatus({ stage: "error", error: "Select both assets" });
-    if (offerFaucet === wantFaucet)
-      return setStatus({ stage: "error", error: "Offered and requested asset must differ" });
-    const offered = toBaseUnits(offerAmount);
-    const requested = toBaseUnits(wantAmount);
-    if (offered <= 0) return setStatus({ stage: "error", error: "Enter the amount you offer" });
-    if (requested <= 0) return setStatus({ stage: "error", error: "Enter the amount you want" });
-
-    setStatus({ stage: "signing" });
-    try {
-      const res = await pswapCreate({
-        accountId: address,
-        offeredFaucetId: offerFaucet,
-        offeredAmount: BigInt(offered),
-        requestedFaucetId: wantFaucet,
-        requestedAmount: BigInt(requested),
-        noteType: visibility,
-        paybackNoteType: "private",
-      });
-      const txId = res.transactionId;
-      setStatus({ stage: "confirming", txId });
-      logTx({
-        txId,
-        type: "swap",
-        recipient: "pswap-order",
-        faucetId: offerFaucet,
-        amount: offerAmount,
-        noteType: visibility,
-        ts: Date.now(),
-      });
-      setStatus({ stage: "confirmed", txId });
-      setOfferAmount("");
-      setWantAmount("");
-      onSent();
-      refetchOrders();
-      setTimeout(() => setStatus((cur) => (cur.txId === txId ? { stage: "idle" } : cur)), 8000);
-    } catch (e) {
-      setStatus({ stage: "error", error: e instanceof Error ? e.message : String(e) });
-    }
-  };
-
-  const handleFill = async () => {
-    if (!fillNoteId.trim()) return setFillStatus({ stage: "error", error: "Paste a PSWAP note id" });
-    const amt = toBaseUnits(fillAmount);
-    if (amt <= 0) return setFillStatus({ stage: "error", error: "Enter the amount you supply" });
-
-    setFillStatus({ stage: "signing" });
-    try {
-      const res = await pswapConsume({
-        accountId: address,
-        note: fillNoteId.trim(),
-        fillAmount: BigInt(amt),
-      });
-      const txId = res.transactionId;
-      setFillStatus({ stage: "confirming", txId });
-      logTx({
-        txId,
-        type: "swap",
-        recipient: "pswap-fill",
-        faucetId: wantFaucet || offerFaucet,
-        amount: fillAmount,
-        noteType: "private",
-        ts: Date.now(),
-      });
-      setFillStatus({ stage: "confirmed", txId });
-      setFillNoteId("");
-      setFillAmount("");
-      onSent();
-      refetchOrders();
-      setTimeout(() => setFillStatus((cur) => (cur.txId === txId ? { stage: "idle" } : cur)), 8000);
-    } catch (e) {
-      setFillStatus({ stage: "error", error: e instanceof Error ? e.message : String(e) });
-    }
-  };
-
-  const handleCancel = async (rec: PswapLineageRecord) => {
-    const noteId = noteIdString(rec.currentTipNoteId());
-    if (!confirm("Reclaim the unfilled portion of this order?")) return;
-    setCancellingId(noteId);
-    try {
-      await pswapCancel({ accountId: address, note: noteId });
-      onSent();
-      refetchOrders();
-    } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
-    } finally {
-      setCancellingId(null);
-    }
-  };
-
-  const offerBalance = assets.find((a) => a.faucetId === offerFaucet);
-
-  return (
-    <>
-      <div className="card">
-        <h2>Atomic PSWAP</h2>
-        <div className="banner banner-good">
-          <span>
-            ⚡ Native partial-fill swaps are live on testnet v0.15. Your order can be
-            filled by many takers; the unfilled remainder is re-created automatically.
-          </span>
-        </div>
-
-        <div className="swap-grid">
-          <div className="swap-side">
-            <div className="swap-side-label">You offer ↑</div>
-            <select value={offerFaucet} onChange={(e) => setOfferFaucet(e.target.value)} disabled={isBusy}>
-              {assets.map((a) => <option key={a.faucetId} value={a.faucetId}>{labelFor(a.faucetId)}</option>)}
-            </select>
-            <input type="number" min="0" step="any" value={offerAmount}
-              onChange={(e) => setOfferAmount(e.target.value)} placeholder="10" disabled={isBusy} />
-            {offerBalance && <p className="hint">Balance: {formatBalance(offerBalance.amount)}</p>}
-          </div>
-          <div className="swap-arrow">⇄</div>
-          <div className="swap-side">
-            <div className="swap-side-label">You want ↓</div>
-            <select value={wantFaucet} onChange={(e) => setWantFaucet(e.target.value)} disabled={isBusy}>
-              {assets.map((a) => <option key={a.faucetId} value={a.faucetId}>{labelFor(a.faucetId)}</option>)}
-            </select>
-            <input type="number" min="0" step="any" value={wantAmount}
-              onChange={(e) => setWantAmount(e.target.value)} placeholder="9" disabled={isBusy} />
-            <p className="hint">Fill price, pro rata</p>
-          </div>
-        </div>
-
-        <div className="radio-row" style={{ marginTop: "0.8rem" }}>
-          <label className="radio">
-            <input type="radio" checked={visibility === "private"}
-              onChange={() => setVisibility("private")} disabled={isBusy} />
-            Private order
-          </label>
-          <label className="radio">
-            <input type="radio" checked={visibility === "public"}
-              onChange={() => setVisibility("public")} disabled={isBusy} />
-            Public order
-          </label>
-        </div>
-        <p className="hint">
-          A private order must be shared with your counterparty out of band. A public
-          order is discoverable by any taker on the network.
-        </p>
-
-        <button onClick={handleCreateOrder} disabled={isBusy || assets.length === 0}
-          style={{ width: "100%", marginTop: "1rem" }}>
-          {isBusy ? "…" : "🔄 Create PSWAP Order"}
-        </button>
-        <TxStatusIndicator status={status} />
-      </div>
-
-      <div className="card">
-        <div className="card-head">
-          <h2>Your Orders ({myOrders.length})</h2>
-          <button className="ghost" onClick={() => refetchOrders()} disabled={loadingOrders}>
-            {loadingOrders ? "…" : "↻"}
-          </button>
-        </div>
-        {myOrders.length === 0 && (
-          <p className="empty">
-            {loadingOrders ? "Loading…" : "No PSWAP orders yet."}
-          </p>
-        )}
-        {myOrders.map((rec: PswapLineageRecord) => {
-          const noteId = noteIdString(rec.currentTipNoteId());
-          const stateNum = Number(rec.state());
-          const depth = Number(rec.currentDepth());
-          const filled = stateNum === 1;
-          return (
-            <div key={rec.orderId()} className={`swap-row status-${filled ? "completed" : "you_sent"}`}>
-              <div className="swap-row-top">
-                <span className="mono">#{rec.orderId().slice(0, 10)}…</span>
-                <span className={`badge badge-${filled ? "completed" : "you_sent"}`}>
-                  {filled ? "✅ " : "⏳ "}{PSWAP_STATE_LABEL[stateNum] ?? "Unknown"}
-                </span>
-              </div>
-              <div className="swap-row-body">
-                Remaining: {formatBalance(rec.remainingOffered().toString())} offered ·{" "}
-                {formatBalance(rec.remainingRequested().toString())} requested
-              </div>
-              <div className="swap-row-meta">
-                Fill rounds: {depth} · Tip note:{" "}
-                <span className="mono">{shortAddr(noteId, 8, 6)}</span>
-                <button className="ghost small" style={{ marginLeft: "0.4rem" }}
-                  onClick={() => navigator.clipboard.writeText(noteId)}>
-                  Copy id
-                </button>
-              </div>
-              {!filled && (
-                <div className="swap-actions">
-                  <button className="ghost small" disabled={cancellingId === noteId}
-                    onClick={() => handleCancel(rec)}>
-                    {cancellingId === noteId ? "…" : "↩ Reclaim unfilled"}
-                  </button>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="card">
-        <h2>Fill an Order</h2>
-        <p className="hint" style={{ marginBottom: "0.8rem" }}>
-          Supply part or all of the requested asset. You receive a pro rata share of
-          the offered asset, and the creator gets a private payback note.
-        </p>
-        <label>PSWAP note id</label>
-        <input type="text" value={fillNoteId} onChange={(e) => setFillNoteId(e.target.value)}
-          placeholder="0x…" spellCheck={false} disabled={isFilling} />
-        <label>Amount you supply</label>
-        <input type="number" min="0" step="any" value={fillAmount}
-          onChange={(e) => setFillAmount(e.target.value)} placeholder="5" disabled={isFilling} />
-        <button onClick={handleFill} disabled={isFilling}
-          style={{ width: "100%", marginTop: "1rem" }}>
-          {isFilling ? "…" : "⚡ Fill Order"}
-        </button>
-        <TxStatusIndicator status={fillStatus} />
-      </div>
-    </>
-  );
-}
-
-// ─── BRIDGE TAB ────────────────────────────────────────────────────────────
-
-interface BridgeTabProps {
-  address: string;
-  assets: Asset[];
-  labelFor: (faucetId: string) => string;
-  onSent: () => void;
-  logTx: (entry: TxLogEntry) => void;
-}
-
-function BridgeTab({ address, assets, labelFor, onSent, logTx }: BridgeTabProps) {
-  const [faucetId, setFaucetId] = useState("");
-  const [amount, setAmount] = useState("");
-  const [network, setNetwork] = useState(BRIDGE_NETWORKS[0].id);
-  const [destination, setDestination] = useState("");
-  const [status, setStatus] = useState<TxStatus>({ stage: "idle" });
-
-  const { bridge } = useBridge();
-
-  useEffect(() => {
-    if (assets.length > 0 && !faucetId) setFaucetId(assets[0].faucetId);
-  }, [assets, faucetId]);
-
-  const isBusy = status.stage !== "idle" && status.stage !== "confirmed" && status.stage !== "error";
-  const configured = BRIDGE_ACCOUNT_ID.length > 0;
-
-  const handleBridge = async () => {
-    if (!configured)
-      return setStatus({ stage: "error", error: "Bridge account not configured" });
-    if (!faucetId) return setStatus({ stage: "error", error: "Select an asset" });
-    const base = toBaseUnits(amount);
-    if (base <= 0) return setStatus({ stage: "error", error: "Enter an amount" });
-    if (!/^0x[0-9a-fA-F]{40}$/.test(destination.trim()))
-      return setStatus({ stage: "error", error: "Enter a valid 0x destination address" });
-
-    setStatus({ stage: "signing" });
-    try {
-      const res = await bridge({
-        from: address,
-        bridgeAccount: BRIDGE_ACCOUNT_ID,
-        assetId: faucetId,
-        amount: BigInt(base),
-        destinationNetwork: network,
-        destinationAddress: destination.trim(),
-      });
-      const txId = res.transactionId;
-      setStatus({ stage: "confirming", txId });
-      logTx({
-        txId,
-        type: "send",
-        recipient: destination.trim(),
-        faucetId,
-        amount,
-        noteType: "public",
-        ts: Date.now(),
-      });
-      setStatus({ stage: "confirmed", txId });
-      setAmount("");
-      onSent();
-      setTimeout(() => setStatus((cur) => (cur.txId === txId ? { stage: "idle" } : cur)), 8000);
-    } catch (e) {
-      setStatus({ stage: "error", error: e instanceof Error ? e.message : String(e) });
-    }
-  };
-
-  const balance = assets.find((a) => a.faucetId === faucetId);
-
-  return (
-    <div className="card">
-      <h2>🌉 Bridge out via Agglayer</h2>
-      <div className="banner">
-        <span>
-          Emits a public B2AGG note that the bridge account consumes, burning the asset
-          so it can be claimed at your destination address. Only the bridge-out leg is
-          public; the rest of your Miden activity stays private.
-        </span>
-      </div>
-
-      {!configured && (
-        <div className="error-box" style={{ marginBottom: "0.8rem" }}>
-          Set <code>VITE_MIDEN_BRIDGE_ACCOUNT</code> to the Miden testnet bridge account
-          id to enable this tab.
-        </div>
-      )}
-
-      <label>Asset</label>
-      <select value={faucetId} onChange={(e) => setFaucetId(e.target.value)} disabled={isBusy}>
-        {assets.map((a) => <option key={a.faucetId} value={a.faucetId}>{labelFor(a.faucetId)}</option>)}
-      </select>
-      {balance && <p className="hint">Balance: {formatBalance(balance.amount)}</p>}
-
-      <label>Amount</label>
-      <input type="number" min="0" step="any" value={amount}
-        onChange={(e) => setAmount(e.target.value)} placeholder="10" disabled={isBusy} />
-
-      <label>Destination network</label>
-      <select value={network} onChange={(e) => setNetwork(Number(e.target.value))} disabled={isBusy}>
-        {BRIDGE_NETWORKS.map((n) => <option key={n.id} value={n.id}>{n.name}</option>)}
-      </select>
-
-      <label>Destination address</label>
-      <input type="text" value={destination} onChange={(e) => setDestination(e.target.value)}
-        placeholder="0x…" spellCheck={false} disabled={isBusy} />
-
-      <button onClick={handleBridge} disabled={isBusy || !configured || assets.length === 0}
-        style={{ width: "100%", marginTop: "1rem" }}>
-        {isBusy ? "…" : "🌉 Bridge Out"}
-      </button>
-      <TxStatusIndicator status={status} />
-
-      <p className="hint" style={{ marginTop: "0.8rem" }}>
-        Track live bridge activity on the{" "}
-        <a href={BRIDGE_MONITOR_URL} target="_blank" rel="noreferrer" className="tx-link">
-          Agglayer monitor ↗
-        </a>
-      </p>
-    </div>
-  );
-}
-
 // ─── AIRDROP TAB ───────────────────────────────────────────────────────────
 
 function AirdropTab({ address, assets, labelFor, requestSend, waitForTransaction, onSent, logTx }: CommonTabProps) {
@@ -1536,147 +1105,6 @@ function AirdropTab({ address, assets, labelFor, requestSend, waitForTransaction
         </div>
       )}
     </>
-  );
-}
-
-// ─── GUARDIAN RECOVERY WALKTHROUGH (interactive explainer) ─────────────────
-
-type KeyId = "hot" | "cold" | "guardian";
-
-interface RecoveryScenario {
-  id: string;
-  title: string;
-  subtitle: string;
-  signers: KeyId[];
-  steps: string[];
-  outcome: string;
-}
-
-const RECOVERY_SCENARIOS: RecoveryScenario[] = [
-  {
-    id: "lost-hot",
-    title: "Lost hot key",
-    subtitle: "Phone gone, daily signing key unavailable",
-    signers: ["cold", "guardian"],
-    steps: [
-      "Hot key is unreachable — you can no longer sign day-to-day.",
-      "You bring your offline cold key out of storage.",
-      "Cold key + Guardian policy key together meet the 2-of-3 threshold.",
-      "They co-sign an auth-update rotating in a fresh hot key.",
-    ],
-    outcome: "Account recovered with a new hot key. No funds moved by anyone alone.",
-  },
-  {
-    id: "stolen",
-    title: "Device stolen",
-    subtitle: "Attacker has your phone / hot key",
-    signers: ["cold", "guardian"],
-    steps: [
-      "Attacker holds the hot key but that is only 1 of 3.",
-      "A single key cannot move funds — the 2-of-3 policy blocks it.",
-      "You act first: cold key + Guardian co-sign a rotation.",
-      "The stolen hot key is revoked before it can be paired with a second key.",
-    ],
-    outcome: "Compromised key neutralised. Attacker is locked out.",
-  },
-  {
-    id: "drop-guardian",
-    title: "Drop the Guardian",
-    subtitle: "Move to pure self-custody, no operator",
-    signers: ["hot", "cold"],
-    steps: [
-      "You decide you no longer want an operator in the policy.",
-      "Hot key + cold key together already satisfy 2-of-3.",
-      "They co-sign an auth-update that removes the Guardian policy key.",
-      "The account continues under keys you fully control.",
-    ],
-    outcome: "Guardian removed. You never depended on it to exit — that is the point.",
-  },
-];
-
-const KEY_META: Record<KeyId, { label: string; icon: string; note: string }> = {
-  hot: { label: "Hot key", icon: "📱", note: "daily signing" },
-  cold: { label: "Cold key", icon: "🧊", note: "offline backup" },
-  guardian: { label: "Guardian", icon: "🛡️", note: "policy co-signer" },
-};
-
-function GuardianRecoveryDemo() {
-  const [scenarioId, setScenarioId] = useState(RECOVERY_SCENARIOS[0].id);
-  const [step, setStep] = useState(0);
-  const scenario = RECOVERY_SCENARIOS.find((s) => s.id === scenarioId)!;
-  const revealed = step >= scenario.steps.length;
-
-  const pick = (id: string) => { setScenarioId(id); setStep(0); };
-
-  return (
-    <div className="card">
-      <div className="card-head">
-        <h2>🔁 Recovery walkthrough</h2>
-        <span className="badge badge-you_sent">demo</span>
-      </div>
-      <p className="hint" style={{ marginBottom: "0.7rem" }}>
-        How a 2-of-3 Guardian account survives a lost or stolen key. This is an
-        interactive explainer, not an on-chain action.
-      </p>
-
-      <div className="scenario-tabs">
-        {RECOVERY_SCENARIOS.map((s) => (
-          <button
-            key={s.id}
-            className={`scenario-tab ${s.id === scenarioId ? "active" : ""}`}
-            onClick={() => pick(s.id)}
-          >
-            {s.title}
-          </button>
-        ))}
-      </div>
-
-      <p className="scenario-sub">{scenario.subtitle}</p>
-
-      <div className="key-triad">
-        {(["hot", "cold", "guardian"] as KeyId[]).map((k) => {
-          const signing = scenario.signers.includes(k);
-          const active = signing && step > 0;
-          return (
-            <div key={k} className={`key-chip ${active ? "key-signing" : ""} ${!signing ? "key-idle" : ""}`}>
-              <span className="key-icon">{KEY_META[k].icon}</span>
-              <span className="key-name">{KEY_META[k].label}</span>
-              <span className="key-note">{KEY_META[k].note}</span>
-              {active && <span className="key-badge">signs ✍️</span>}
-            </div>
-          );
-        })}
-      </div>
-      <div className="threshold-line">
-        <span className="threshold-pill">
-          {step > 0 ? `${scenario.signers.length}-of-3 threshold met ✅` : "2-of-3 policy · any single key is powerless"}
-        </span>
-      </div>
-
-      <ol className="recovery-steps">
-        {scenario.steps.map((s, i) => (
-          <li key={i} className={i < step ? "step-done" : i === step ? "step-current" : "step-pending"}>
-            {s}
-          </li>
-        ))}
-      </ol>
-
-      {revealed && (
-        <div className="recovery-outcome">✅ {scenario.outcome}</div>
-      )}
-
-      <div className="swap-actions" style={{ marginTop: "0.8rem" }}>
-        {!revealed ? (
-          <button className="primary" onClick={() => setStep((s) => s + 1)} style={{ flex: 1 }}>
-            {step === 0 ? "▶ Start walkthrough" : "Next step →"}
-          </button>
-        ) : (
-          <button className="ghost" onClick={() => setStep(0)} style={{ flex: 1 }}>
-            ↺ Replay
-          </button>
-        )}
-      </div>
-    </div>
   );
 }
 
@@ -1884,8 +1312,6 @@ function VaultTab({
         )}
       </div>
 
-      <GuardianRecoveryDemo />
-
       <div className="card">
         <h2>🔐 Vault — Recallable Transfers</h2>
         <p className="hint" style={{ marginBottom: "0.5rem" }}>
@@ -2092,7 +1518,6 @@ function PrivacyTab({
         <h2>Activity by type</h2>
         <BarChart data={[
           { label: "💸 Send", value: typeCount.send, color: "#6366f1" },
-          { label: "🔄 Swap", value: typeCount.swap, color: "#8b5cf6" },
           { label: "🪂 Airdrop", value: typeCount.airdrop, color: "#ec4899" },
           { label: "🔐 Vault", value: typeCount.vault, color: "#f59e0b" },
           { label: "↩️ Recall", value: typeCount.recall, color: "#22c55e" },
