@@ -561,3 +561,98 @@ button.primary { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
 }
 .guardian-row:last-of-type { border-bottom: none; }
 .guardian-label { color: #94a3b8; font-size: 0.82rem; }
+
+/* ─── Send / Request mode toggle ──────────────────────────────────────────── */
+.send-mode-tabs {
+  display: flex; gap: 0.3rem;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 0.3rem; border-radius: 11px; margin-bottom: 1rem;
+}
+.send-mode-btn {
+  flex: 1; background: transparent; color: #94a3b8; border: none;
+  padding: 0.5rem 0.6rem; border-radius: 7px; font-size: 0.9rem;
+  font-weight: 500; cursor: pointer; transition: all 0.15s;
+}
+.send-mode-btn:hover { color: #cbd5e1; transform: none; }
+.send-mode-btn.active {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+}
+
+/* ─── Payment request banner (Send prefill) ───────────────────────────────── */
+.request-banner {
+  display: flex; align-items: flex-start; gap: 0.6rem;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(168, 85, 247, 0.08));
+  border: 1px solid rgba(129, 140, 248, 0.3);
+  border-radius: 11px; padding: 0.8rem 0.9rem; margin-bottom: 1rem;
+}
+.request-banner-body { display: flex; flex-direction: column; gap: 0.2rem; flex: 1; font-size: 0.85rem; color: #cbd5e1; }
+.request-banner-body strong { color: #c084fc; }
+.request-memo { color: #94a3b8; }
+.request-banner-hint { color: #64748b; font-size: 0.78rem; }
+
+/* ─── Request link builder ────────────────────────────────────────────────── */
+.request-link-box { margin-top: 1rem; }
+.request-link-value {
+  margin-top: 0.35rem;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9px; padding: 0.6rem 0.7rem;
+  font-size: 0.76rem; color: #a5b4fc; word-break: break-all; line-height: 1.5;
+}
+
+/* ─── Guardian recovery walkthrough ───────────────────────────────────────── */
+.scenario-tabs { display: flex; gap: 0.3rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
+.scenario-tab {
+  background: rgba(255, 255, 255, 0.04); color: #94a3b8;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.4rem 0.7rem; border-radius: 8px; font-size: 0.82rem;
+  cursor: pointer; transition: all 0.15s;
+}
+.scenario-tab:hover { color: #cbd5e1; transform: none; }
+.scenario-tab.active {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(168, 85, 247, 0.15));
+  border-color: rgba(129, 140, 248, 0.4); color: #c4b5fd;
+}
+.scenario-sub { color: #94a3b8; font-size: 0.85rem; margin: 0 0 0.9rem; }
+
+.key-triad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
+.key-chip {
+  display: flex; flex-direction: column; align-items: center; gap: 0.15rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 11px; padding: 0.8rem 0.4rem; text-align: center;
+  transition: all 0.25s;
+}
+.key-icon { font-size: 1.5rem; }
+.key-name { font-size: 0.82rem; font-weight: 600; color: #e2e8f0; }
+.key-note { font-size: 0.68rem; color: #64748b; }
+.key-idle { opacity: 0.4; }
+.key-signing {
+  border-color: rgba(74, 222, 128, 0.5);
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.12), rgba(34, 197, 94, 0.04));
+  box-shadow: 0 0 16px rgba(34, 197, 94, 0.12);
+}
+.key-badge {
+  margin-top: 0.2rem; font-size: 0.66rem; color: #4ade80;
+  background: rgba(34, 197, 94, 0.12); padding: 0.05rem 0.4rem; border-radius: 999px;
+}
+.threshold-line { text-align: center; margin: 0.8rem 0; }
+.threshold-pill {
+  display: inline-block; font-size: 0.78rem; color: #c4b5fd;
+  background: rgba(129, 140, 248, 0.1);
+  border: 1px solid rgba(129, 140, 248, 0.25);
+  padding: 0.3rem 0.8rem; border-radius: 999px;
+}
+.recovery-steps { margin: 0.4rem 0 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.45rem; }
+.recovery-steps li { font-size: 0.85rem; line-height: 1.4; transition: all 0.2s; }
+.step-pending { color: #475569; }
+.step-current { color: #e2e8f0; font-weight: 500; }
+.step-done { color: #94a3b8; }
+.recovery-outcome {
+  margin-top: 0.9rem;
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(34, 197, 94, 0.03));
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  color: #4ade80; padding: 0.7rem 0.9rem; border-radius: 10px;
+  font-size: 0.85rem; font-weight: 500;
+}
