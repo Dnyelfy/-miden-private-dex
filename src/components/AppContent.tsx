@@ -8,6 +8,7 @@ import type {
 import {
   EXPLORER_BASE_URL,
 } from "@/config";
+import { SwapTab } from "./SwapTab";
 import "./AppContent.css";
 
 // ─── Constants & helpers ───────────────────────────────────────────────────
@@ -162,7 +163,7 @@ interface TxStatus {
 
 // ─── Main ──────────────────────────────────────────────────────────────────
 
-type Tab = "send" | "airdrop" | "vault" | "privacy";
+type Tab = "send" | "airdrop" | "vault" | "privacy" | "swap";
 
 export function AppContent() {
   const wallet = useMidenFiWallet();
@@ -329,6 +330,7 @@ export function AppContent() {
             <TabBtn label="🪂 Airdrop" active={tab === "airdrop"} onClick={() => setTab("airdrop")} />
             <TabBtn label="🔐 Vault" active={tab === "vault"} onClick={() => setTab("vault")} />
             <TabBtn label="📊 Privacy" active={tab === "privacy"} onClick={() => setTab("privacy")} />
+            <TabBtn label="🔄 Swap" active={tab === "swap"} onClick={() => setTab("swap")} />
           </div>
 
           <div className="card">
@@ -409,6 +411,9 @@ export function AppContent() {
           )}
           {tab === "privacy" && (
             <PrivacyTab txLog={txLog} labelFor={labelFor} />
+          )}
+          {tab === "swap" && address && (
+            <SwapTab accountId={address} />
           )}
         </>
       )}
