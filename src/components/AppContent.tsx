@@ -413,7 +413,7 @@ export function AppContent() {
             <PrivacyTab txLog={txLog} labelFor={labelFor} />
           )}
           {tab === "swap" && address && (
-            <SwapTab accountId={address} />
+            <SwapTab accountId={address} assets={assets} labelFor={labelFor} />
           )}
         </>
       )}
