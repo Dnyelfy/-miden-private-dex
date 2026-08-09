@@ -9,15 +9,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@miden-sdk/miden-sdk": "0.15.8",
-    "@miden-sdk/react": "0.15.8",
+    "@miden-sdk/miden-sdk": "0.15.9",
+    "@miden-sdk/react": "0.15.9",
     "@miden-sdk/miden-wallet-adapter-base": "0.15.3",
     "@miden-sdk/miden-wallet-adapter-react": "0.15.3",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
   "devDependencies": {
-    "@miden-sdk/vite-plugin": "0.15.8",
+    "@miden-sdk/vite-plugin": "0.15.9",
     "@types/node": "^24.6.0",
     "@types/react": "^19.1.16",
     "@types/react-dom": "^19.1.9",
