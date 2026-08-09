@@ -4,8 +4,13 @@ import {
   usePswapConsume,
   usePswapCancelByOrder,
   usePswapLineages,
+  useCreateFaucet,
+  useMint,
+  useConsume,
+  useWaitForNotes,
   type PswapLineageRecord,
 } from "@miden-sdk/react";
+import type { Asset } from "@miden-sdk/miden-wallet-adapter-base";
 import { EXPLORER_BASE_URL } from "@/config";
 
 // ─── Constants & helpers ───────────────────────────────────────────────────
@@ -94,7 +99,15 @@ function flatten(rec: PswapLineageRecord): Order | null {
 
 // ─── Component ─────────────────────────────────────────────────────────────
 
-export function SwapTab({ accountId }: { accountId: string }) {
+export function SwapTab({
+  accountId,
+  assets,
+  labelFor,
+}: {
+  accountId: string;
+  assets: Asset[];
+  labelFor: (faucetId: string) => string;
+}) {
   // Order form
   const [offerFaucet, setOfferFaucet] = useState("");
   const [offerAmount, setOfferAmount] = useState("");
@@ -116,6 +129,18 @@ export function SwapTab({ accountId }: { accountId: string }) {
   );
   const busyRef = useRef(false);
   const triedRef = useRef<Set<string>>(new Set());
+
+  // Test token factory
+  const [symbol, setSymbol] = useState("USDX");
+  const [mintAmount, setMintAmount] = useState("1000");
+  const [factoryStep, setFactoryStep] = useState<string | null>(null);
+  const [factoryErr, setFactoryErr] = useState<string | null>(null);
+  const [newFaucet, setNewFaucet] = useState<string | null>(null);
+
+  const { createFaucet, isCreating: makingFaucet } = useCreateFaucet();
+  const { mint } = useMint();
+  const { consume } = useConsume();
+  const { waitForConsumableNotes } = useWaitForNotes();
 
   const { pswapCreate, isLoading: creating, stage: createStage } = usePswapCreate();
   const { pswapConsume, isLoading: filling } = usePswapConsume();
@@ -153,9 +178,78 @@ export function SwapTab({ accountId }: { accountId: string }) {
     [orders, me],
   );
 
+  const offerBalance = useMemo(() => {
+    if (!offerFaucet) return null;
+    const a = assets.find((x) => x.faucetId === offerFaucet);
+    return a ? Number(a.amount) : null;
+  }, [assets, offerFaucet]);
+
   const pushLog = useCallback((e: LogEntry) => {
     setLog((prev) => [e, ...prev].slice(0, 50));
   }, []);
+
+  // ── Test token factory ───────────────────────────────────────────────────
+
+  const handleMakeToken = useCallback(async () => {
+    setFactoryErr(null);
+    setNewFaucet(null);
+
+    const sym = symbol.trim().toUpperCase();
+    const amt = toBase(mintAmount);
+    if (!sym) {
+      setFactoryErr("Pick a symbol, e.g. USDX.");
+      return;
+    }
+    if (amt <= 0) {
+      setFactoryErr("Mint amount must be greater than zero.");
+      return;
+    }
+
+    try {
+      setFactoryStep("Creating faucet…");
+      const faucet = await createFaucet({
+        tokenSymbol: sym,
+        decimals: DECIMALS,
+        maxSupply: BigInt(amt) * 1000n,
+      });
+      const faucetId = faucet.id().toString();
+
+      setFactoryStep("Minting to your wallet…");
+      await mint({
+        targetAccountId: accountId,
+        faucetId,
+        amount: BigInt(amt),
+      });
+
+      setFactoryStep("Waiting for the note…");
+      const notes = await waitForConsumableNotes({
+        accountId,
+        minCount: 1,
+        timeoutMs: 60000,
+      });
+
+      setFactoryStep("Consuming the note…");
+      await consume({
+        accountId,
+        notes: notes.map((n) => n.inputNoteRecord()),
+      });
+
+      setFactoryStep(null);
+      setNewFaucet(faucetId);
+      setWantFaucet(faucetId);
+    } catch (err) {
+      setFactoryStep(null);
+      setFactoryErr(err instanceof Error ? err.message : String(err));
+    }
+  }, [
+    symbol,
+    mintAmount,
+    accountId,
+    createFaucet,
+    mint,
+    waitForConsumableNotes,
+    consume,
+  ]);
 
   // ── Create order ─────────────────────────────────────────────────────────
 
@@ -172,6 +266,14 @@ export function SwapTab({ accountId }: { accountId: string }) {
     }
     if (offered <= 0 || requested <= 0) {
       setFormErr("Amounts must be greater than zero.");
+      return;
+    }
+    if (offerFaucet.trim() === wantFaucet.trim()) {
+      setFormErr("Offered and requested tokens must be different.");
+      return;
+    }
+    if (offerBalance !== null && offered > offerBalance) {
+      setFormErr(`You only hold ${fmt(offerBalance)} of that token.`);
       return;
     }
 
@@ -201,6 +303,7 @@ export function SwapTab({ accountId }: { accountId: string }) {
     wantFaucet,
     wantAmount,
     publicOrder,
+    offerBalance,
     pswapCreate,
     refetch,
   ]);
@@ -311,6 +414,47 @@ export function SwapTab({ accountId }: { accountId: string }) {
 
   return (
     <>
+      {/* ── Test token factory ── */}
+      <div className="card">
+        <h2>Make a Test Token</h2>
+        <p className="hint">
+          The Miden faucet only hands out MIDEN, so a swap needs a second token.
+          This creates your own faucet and mints the supply straight into your
+          wallet.
+        </p>
+
+        <div className="solver-controls">
+          <input
+            value={symbol}
+            onChange={(e) => setSymbol(e.target.value)}
+            placeholder="symbol"
+          />
+          <input
+            value={mintAmount}
+            onChange={(e) => setMintAmount(e.target.value)}
+            placeholder="amount"
+            inputMode="decimal"
+          />
+          <button
+            className="primary"
+            onClick={handleMakeToken}
+            disabled={makingFaucet || factoryStep !== null || !accountId}
+          >
+            {factoryStep ? "…" : "Create"}
+          </button>
+        </div>
+
+        {factoryStep && <p className="hint">{factoryStep}</p>}
+        {factoryErr && <div className="error-box">{factoryErr}</div>}
+        {newFaucet && (
+          <div className="success-box">
+            Token ready · <span className="mono">{short(newFaucet)}</span>
+            <br />
+            Filled into &quot;You want&quot; below.
+          </div>
+        )}
+      </div>
+
       {/* ── Create order ── */}
       <div className="card">
         <h2>Create Private Order</h2>
@@ -322,28 +466,58 @@ export function SwapTab({ accountId }: { accountId: string }) {
         <div className="swap-grid">
           <div className="swap-side">
             <span className="swap-side-label">You offer</span>
-            <input
-              value={offerFaucet}
-              onChange={(e) => setOfferFaucet(e.target.value)}
-              placeholder="faucet id"
-            />
+
+            <span className="field-label">Token</span>
+            {assets.length > 0 ? (
+              <select
+                value={offerFaucet}
+                onChange={(e) => setOfferFaucet(e.target.value)}
+              >
+                <option value="">select a token…</option>
+                {assets.map((a) => (
+                  <option key={a.faucetId} value={a.faucetId}>
+                    {labelFor(a.faucetId)} · {fmt(Number(a.amount))}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                value={offerFaucet}
+                onChange={(e) => setOfferFaucet(e.target.value)}
+                placeholder="mtst1…"
+              />
+            )}
+
+            <span className="field-label">Amount</span>
             <input
               value={offerAmount}
               onChange={(e) => setOfferAmount(e.target.value)}
               placeholder="0.0"
               inputMode="decimal"
             />
+            {offerBalance !== null && (
+              <button
+                className="max-btn"
+                onClick={() => setOfferAmount(String(offerBalance / FACTOR))}
+              >
+                MAX {fmt(offerBalance)}
+              </button>
+            )}
           </div>
 
           <div className="swap-arrow">→</div>
 
           <div className="swap-side">
             <span className="swap-side-label">You want</span>
+
+            <span className="field-label">Token</span>
             <input
               value={wantFaucet}
               onChange={(e) => setWantFaucet(e.target.value)}
-              placeholder="faucet id"
+              placeholder="mtst1… (faucet id)"
             />
+
+            <span className="field-label">Amount</span>
             <input
               value={wantAmount}
               onChange={(e) => setWantAmount(e.target.value)}
