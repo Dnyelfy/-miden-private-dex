@@ -656,3 +656,33 @@ button.primary { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
   color: #4ade80; padding: 0.7rem 0.9rem; border-radius: 10px;
   font-size: 0.85rem; font-weight: 500;
 }
+
+/* ── Swap tab: solver & order controls ───────────────────────────────── */
+
+.swap-toggle { margin-top: 0.8rem; }
+.swap-submit { margin-top: 0.8rem; width: 100%; }
+
+.solver-controls {
+  display: flex; gap: 0.5rem; align-items: center;
+  margin-top: 0.8rem;
+}
+.solver-controls input { flex: 1; }
+.solver-controls button { white-space: nowrap; }
+
+.solver-log {
+  margin-top: 0.8rem;
+  max-height: 220px; overflow-y: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding-top: 0.5rem;
+}
+.solver-log-row {
+  display: flex; align-items: center; gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.4rem 0;
+  font-size: 0.8rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.solver-log-row:last-child { border-bottom: none; }
+.solver-log-row.err .tiny { color: #fca5a5; }
+
+.swap-actions input { flex: 1; min-width: 0; }
