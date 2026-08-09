@@ -61,6 +61,19 @@ function lsSave(key: string, val: unknown) {
   }
 }
 
+type FactoryStep = {
+  label: string;
+  state: "pending" | "active" | "done" | "failed";
+  ms?: number;
+};
+
+const FACTORY_STEPS = [
+  "Creating faucet",
+  "Minting to your wallet",
+  "Waiting for the note",
+  "Consuming the note",
+];
+
 type LogEntry = {
   at: number;
   orderId: string;
@@ -133,7 +146,9 @@ export function SwapTab({
   // Test token factory
   const [symbol, setSymbol] = useState("USDX");
   const [mintAmount, setMintAmount] = useState("1000");
-  const [factoryStep, setFactoryStep] = useState<string | null>(null);
+  const [steps, setSteps] = useState<FactoryStep[]>([]);
+  const [running, setRunning] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
   const [factoryErr, setFactoryErr] = useState<string | null>(null);
   const [newFaucet, setNewFaucet] = useState<string | null>(null);
 
@@ -146,6 +161,14 @@ export function SwapTab({
   const { pswapConsume, isLoading: filling } = usePswapConsume();
   const { pswapCancelByOrder, isLoading: cancelling } = usePswapCancelByOrder();
   const { lineages, isLoading: loadingOrders, refetch } = usePswapLineages();
+
+  useEffect(() => {
+    if (!running) return;
+    const t0 = Date.now();
+    setElapsed(0);
+    const id = setInterval(() => setElapsed(Date.now() - t0), 500);
+    return () => clearInterval(id);
+  }, [running]);
 
   useEffect(() => {
     lsSave(SOLVER_KEY, { on: solverOn, maxFill });
@@ -205,41 +228,83 @@ export function SwapTab({
       return;
     }
 
+    const marks = FACTORY_STEPS.map<FactoryStep>((label) => ({
+      label,
+      state: "pending",
+    }));
+    setSteps(marks);
+    setRunning(true);
+
+    let t = Date.now();
+    const begin = (i: number) => {
+      t = Date.now();
+      setSteps((prev) =>
+        prev.map((s2, j) => (j === i ? { ...s2, state: "active" } : s2)),
+      );
+    };
+    const finish = (i: number) => {
+      const ms = Date.now() - t;
+      setSteps((prev) =>
+        prev.map((s2, j) => (j === i ? { ...s2, state: "done", ms } : s2)),
+      );
+    };
+    const fail = (i: number) => {
+      setSteps((prev) =>
+        prev.map((s2, j) => (j === i ? { ...s2, state: "failed" } : s2)),
+      );
+    };
+
+    let i = 0;
     try {
-      setFactoryStep("Creating faucet…");
+      // 1 ── faucet. MUST be public: a private faucet is invisible to the
+      // network, so the mint that follows would never settle.
+      begin(i);
       const faucet = await createFaucet({
         tokenSymbol: sym,
         decimals: DECIMALS,
         maxSupply: BigInt(amt) * 1000n,
+        storageMode: "public",
       });
       const faucetId = faucet.id().toString();
+      finish(i);
 
-      setFactoryStep("Minting to your wallet…");
+      // 2 ── mint
+      i = 1;
+      begin(i);
       await mint({
         targetAccountId: accountId,
         faucetId,
         amount: BigInt(amt),
+        noteType: "public",
       });
+      finish(i);
 
-      setFactoryStep("Waiting for the note…");
+      // 3 ── wait for the note to land
+      i = 2;
+      begin(i);
       const notes = await waitForConsumableNotes({
         accountId,
         minCount: 1,
-        timeoutMs: 60000,
+        timeoutMs: 120000,
       });
+      finish(i);
 
-      setFactoryStep("Consuming the note…");
+      // 4 ── consume it so the balance shows up
+      i = 3;
+      begin(i);
       await consume({
         accountId,
         notes: notes.map((n) => n.inputNoteRecord()),
       });
+      finish(i);
 
-      setFactoryStep(null);
       setNewFaucet(faucetId);
       setWantFaucet(faucetId);
     } catch (err) {
-      setFactoryStep(null);
+      fail(i);
       setFactoryErr(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRunning(false);
     }
   }, [
     symbol,
@@ -428,23 +493,56 @@ export function SwapTab({
             value={symbol}
             onChange={(e) => setSymbol(e.target.value)}
             placeholder="symbol"
+            disabled={running}
           />
           <input
             value={mintAmount}
             onChange={(e) => setMintAmount(e.target.value)}
             placeholder="amount"
             inputMode="decimal"
+            disabled={running}
           />
           <button
             className="primary"
             onClick={handleMakeToken}
-            disabled={makingFaucet || factoryStep !== null || !accountId}
+            disabled={running || makingFaucet || !accountId}
           >
-            {factoryStep ? "…" : "Create"}
+            {running ? "Working…" : "Create"}
           </button>
         </div>
 
-        {factoryStep && <p className="hint">{factoryStep}</p>}
+        {steps.length > 0 && (
+          <div className="factory-steps">
+            {steps.map((st) => (
+              <div className={`factory-step is-${st.state}`} key={st.label}>
+                <span className="factory-dot">
+                  {st.state === "done"
+                    ? "✓"
+                    : st.state === "failed"
+                      ? "✕"
+                      : st.state === "active"
+                        ? "•"
+                        : "·"}
+                </span>
+                <span className="factory-label">{st.label}</span>
+                <span className="factory-time">
+                  {st.ms !== undefined
+                    ? `${(st.ms / 1000).toFixed(1)}s`
+                    : st.state === "active"
+                      ? `${(elapsed / 1000).toFixed(0)}s`
+                      : ""}
+                </span>
+              </div>
+            ))}
+            {running && (
+              <p className="hint">
+                Proofs are generated in your browser, so this takes a while.
+                Keep the tab open.
+              </p>
+            )}
+          </div>
+        )}
+
         {factoryErr && <div className="error-box">{factoryErr}</div>}
         {newFaucet && (
           <div className="success-box">
