@@ -253,7 +253,7 @@ export function SwapTab({ accountId }: { accountId: string }) {
   const handleCancel = useCallback(
     async (order: Order) => {
       try {
-        await pswapCancelByOrder({ accountId, orderId: order.orderId });
+        await pswapCancelByOrder({ orderId: order.orderId });
         await refetch();
       } catch (err) {
         pushLog({
