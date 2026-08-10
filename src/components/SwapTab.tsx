@@ -5,6 +5,7 @@ import {
   usePswapCancelByOrder,
   usePswapLineagesFor,
   useSyncState,
+  accountIdsEqual,
   useExportNote,
   useImportNote,
   useCreateFaucet,
@@ -187,6 +188,8 @@ export function SwapTab({
   );
 
   // ── Dev tools (testnet only) ──
+  const [rawErr, setRawErr] = useState<string | null>(null);
+  const [diagOpen, setDiagOpen] = useState(false);
   const [devOpen, setDevOpen] = useState(false);
   const [symbol, setSymbol] = useState("USDX");
   const [mintAmount, setMintAmount] = useState("1000");
@@ -194,6 +197,16 @@ export function SwapTab({
   const [factoryErr, setFactoryErr] = useState<string | null>(null);
   const [newFaucet, setNewFaucet] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+
+  // Keeps the real error text around while still showing something readable.
+  const explain = useCallback((e: unknown) => {
+    const raw =
+      e instanceof Error ? `${e.name}: ${e.message}\n${e.stack ?? ""}` : String(e);
+    setRawErr(raw);
+    // eslint-disable-next-line no-console
+    console.error("[swap]", e);
+    return humanError(e);
+  }, []);
 
   const { pswapCreate, isLoading: creating } = usePswapCreate();
   const { pswapConsume, isLoading: filling } = usePswapConsume();
@@ -261,14 +274,30 @@ export function SwapTab({
     return out;
   }, [assets, known, offerFaucet, labelFor]);
 
-  const me = (accountId ?? "").toLowerCase();
+  // Account IDs arrive in two formats (hex 0x… and bech32 mtst1…), so they
+  // can never be compared as plain strings — the SDK helper parses both.
+  // usePswapLineagesFor already scopes results to this account; this is kept
+  // for labelling an offer as yours when a record shows up unscoped.
+  const isMine = useCallback(
+    (id: string) => {
+      if (!accountId || !id) return false;
+      try {
+        return accountIdsEqual(id, accountId);
+      } catch {
+        return false;
+      }
+    },
+    [accountId],
+  );
 
+  // usePswapLineagesFor already scopes to this account, so the creator check
+  // is only a safety net for anything the SDK hands back unscoped.
   const myOpenOffers = useMemo(
     () =>
       orders.filter(
-        (o) => o.creator.toLowerCase() === me && o.state === STATE_ACTIVE,
+        (o) => o.state === STATE_ACTIVE,
       ),
-    [orders, me],
+    [orders],
   );
 
   // ── Build an offer ───────────────────────────────────────────────────────
@@ -325,9 +354,7 @@ export function SwapTab({
         await refetch();
         await sleep(2000);
         fresh =
-          ordersRef.current.find(
-            (o) => !before.has(o.orderId) && o.creator.toLowerCase() === me,
-          ) ?? null;
+          ordersRef.current.find((o) => !before.has(o.orderId)) ?? null;
       }
 
       if (!fresh) {
@@ -351,7 +378,7 @@ export function SwapTab({
       setOfferAmount("");
       setWantAmount("");
     } catch (err) {
-      setFormErr(humanError(err));
+      setFormErr(explain(err));
     } finally {
       setBuilding(false);
       setBuildStage("");
@@ -363,11 +390,11 @@ export function SwapTab({
     wantFaucet,
     assets,
     accountId,
-    me,
     pswapCreate,
     refetch,
     sync,
     exportNote,
+    explain,
     remember,
     labelFor,
   ]);
@@ -409,7 +436,7 @@ export function SwapTab({
         }
       } catch (err) {
         if (!cancelled) {
-          setIncomingErr(humanError(err));
+          setIncomingErr(explain(err));
         }
       } finally {
         if (!cancelled) setLoadingIncoming(false);
@@ -419,7 +446,7 @@ export function SwapTab({
     return () => {
       cancelled = true;
     };
-  }, [payload, accountId, importNote, refetch, sync]);
+  }, [payload, accountId, importNote, refetch, sync, explain]);
 
   const dismissIncoming = useCallback(() => {
     setPayload(null);
@@ -447,9 +474,9 @@ export function SwapTab({
       setFillTx(res.transactionId);
       await refetch();
     } catch (err) {
-      setIncomingErr(humanError(err));
+      setIncomingErr(explain(err));
     }
-  }, [incoming, fillAmount, accountId, pswapConsume, refetch]);
+  }, [incoming, fillAmount, accountId, pswapConsume, refetch, explain]);
 
   const [linking, setLinking] = useState<string | null>(null);
 
@@ -464,12 +491,12 @@ export function SwapTab({
         setSavedLinks((prev) => ({ ...prev, [order.orderId]: url }));
         await copy(url);
       } catch (err) {
-        setFormErr(humanError(err));
+        setFormErr(explain(err));
       } finally {
         setLinking(null);
       }
     },
-    [exportNote],
+    [exportNote, explain],
   );
 
   // ── Cancel one of my offers ──────────────────────────────────────────────
@@ -485,10 +512,10 @@ export function SwapTab({
         });
         await refetch();
       } catch (err) {
-        setFormErr(humanError(err));
+        setFormErr(explain(err));
       }
     },
-    [pswapCancelByOrder, refetch],
+    [pswapCancelByOrder, refetch, explain],
   );
 
   // ── Copy helper ──────────────────────────────────────────────────────────
@@ -551,7 +578,7 @@ export function SwapTab({
       setWantOther(false);
       setWantFaucet(faucetId);
     } catch (err) {
-      setFactoryErr(humanError(err));
+      setFactoryErr(explain(err));
     } finally {
       setRunning(false);
       setFactoryStage("");
@@ -565,6 +592,7 @@ export function SwapTab({
     waitForConsumableNotes,
     consume,
     remember,
+    explain,
   ]);
 
   const busy = building || creating || filling || cancelling;
@@ -826,6 +854,52 @@ export function SwapTab({
         ))}
       </div>
 
+      {/* ── Diagnostics ── */}
+      <div className="card swap-dev">
+        <button
+          className="swap-dev-toggle"
+          onClick={() => setDiagOpen((v) => !v)}
+        >
+          {diagOpen ? "▾" : "▸"} Diagnostics
+        </button>
+
+        {diagOpen && (
+          <div className="swap-diag">
+            <div>
+              <b>wallet</b>: <span className="mono">{accountId || "(not connected)"}</span>
+            </div>
+            <div>
+              <b>lineage records</b>: {orders.length}
+              {loadingOrders ? " (loading…)" : ""}
+            </div>
+            {orders.length === 0 && (
+              <div className="hint">
+                Nothing came back from the network for this account.
+              </div>
+            )}
+            {orders.map((o) => (
+              <div key={o.orderId} className="swap-diag-row">
+                <span className="mono">{short(o.orderId)}</span>
+                {" · state "}{o.state}
+                {" · mine "}{isMine(o.creator) ? "yes" : "no"}
+                {" · creator "}<span className="mono">{short(o.creator)}</span>
+                {" · offering "}{fmt(o.remainingOffered)}
+                {" · asking "}{fmt(o.remainingRequested)}
+              </div>
+            ))}
+            {rawErr && (
+              <>
+                <div><b>last raw error</b></div>
+                <pre className="swap-diag-raw">{rawErr}</pre>
+              </>
+            )}
+            <button className="ghost" onClick={() => refetch()}>
+              Re-read from network
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* ── Developer tools — testnet only ── */}
       {!IS_MAINNET && (
         <div className="card swap-dev">
@@ -913,6 +987,11 @@ const SWAP_CSS = `
 .swap-link-back { background:none; border:none; color:inherit; cursor:pointer;
   font-size:.75rem; opacity:.6; padding:.25rem 0; text-align:left; }
 .swap-link-back:hover { opacity:1; }
+.swap-diag { display:flex; flex-direction:column; gap:.4rem; margin-top:.75rem;
+  font-size:.8rem; }
+.swap-diag-row { opacity:.8; word-break:break-all; }
+.swap-diag-raw { white-space:pre-wrap; word-break:break-all; font-size:.7rem;
+  max-height:14rem; overflow:auto; opacity:.75; margin:0; }
 .swap-dev { opacity:.85; }
 .swap-dev-toggle { background:none; border:none; color:inherit; cursor:pointer;
   font-size:.9rem; padding:0; opacity:.75; }
