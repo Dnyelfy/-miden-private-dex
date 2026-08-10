@@ -311,7 +311,7 @@ export function SwapTab({
 
       setBuildStage("Waiting for the note to settle…");
       let fresh: Order | null = null;
-      for (let i = 0; i < 20 && !fresh; i++) {
+      for (let i = 0; i < 45 && !fresh; i++) {
         await refetch();
         await sleep(2000);
         fresh =
@@ -321,9 +321,11 @@ export function SwapTab({
       }
 
       if (!fresh) {
-        throw new Error(
-          "The swap note was submitted but has not appeared yet. Check 'Your open offers' in a moment.",
+        setFormErr(
+          "Your offer was submitted, but the network is slow to confirm it. " +
+            "It will appear under 'Your Open Offers' shortly — use 'Get link' there to share it.",
         );
+        return;
       }
 
       setBuildStage("Packaging the offer…");
@@ -432,6 +434,27 @@ export function SwapTab({
       setIncomingErr(humanError(err));
     }
   }, [incoming, fillAmount, accountId, pswapConsume, refetch]);
+
+  const [linking, setLinking] = useState<string | null>(null);
+
+  const handleGetLink = useCallback(
+    async (order: Order) => {
+      setLinking(order.orderId);
+      setFormErr(null);
+      try {
+        const bytes = await exportNote(order.tipNoteId);
+        const base = `${window.location.origin}${window.location.pathname}`;
+        const url = `${base}#offer=${b64urlEncode(bytes)}`;
+        setSavedLinks((prev) => ({ ...prev, [order.orderId]: url }));
+        await copy(url);
+      } catch (err) {
+        setFormErr(humanError(err));
+      } finally {
+        setLinking(null);
+      }
+    },
+    [exportNote],
+  );
 
   // ── Cancel one of my offers ──────────────────────────────────────────────
 
@@ -758,12 +781,20 @@ export function SwapTab({
               </span>
             </div>
             <div className="swap-offer-actions">
-              {savedLinks[o.orderId] && (
+              {savedLinks[o.orderId] ? (
                 <button
                   className="ghost"
                   onClick={() => copy(savedLinks[o.orderId])}
                 >
-                  Copy link
+                  {copied ? "Copied ✓" : "Copy link"}
+                </button>
+              ) : (
+                <button
+                  className="ghost"
+                  onClick={() => handleGetLink(o)}
+                  disabled={linking === o.orderId}
+                >
+                  {linking === o.orderId ? "Building…" : "Get link"}
                 </button>
               )}
               <button
