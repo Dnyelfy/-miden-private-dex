@@ -3,7 +3,8 @@ import {
   usePswapCreate,
   usePswapConsume,
   usePswapCancelByOrder,
-  usePswapLineages,
+  usePswapLineagesFor,
+  useSyncState,
   useExportNote,
   useImportNote,
   useCreateFaucet,
@@ -197,7 +198,9 @@ export function SwapTab({
   const { pswapCreate, isLoading: creating } = usePswapCreate();
   const { pswapConsume, isLoading: filling } = usePswapConsume();
   const { pswapCancelByOrder, isLoading: cancelling } = usePswapCancelByOrder();
-  const { lineages, isLoading: loadingOrders, refetch } = usePswapLineages();
+  const { lineages, isLoading: loadingOrders, refetch } =
+    usePswapLineagesFor(accountId || null);
+  const { sync } = useSyncState();
   const { exportNote } = useExportNote();
   const { importNote } = useImportNote();
 
@@ -303,15 +306,22 @@ export function SwapTab({
         offeredAmount: BigInt(offered),
         requestedFaucetId: wantFaucet.trim(),
         requestedAmount: BigInt(requested),
-        // Private on both sides: the counterparty arrives through the link,
-        // so nothing needs to be discoverable on-chain.
-        noteType: "private",
+        // The order note is public so the network indexes it — a fully
+        // private note is delivered, never listed, so neither side could
+        // look it up afterwards. The payback note stays private: who filled
+        // the offer and where the funds went is not visible.
+        noteType: "public",
         paybackNoteType: "private",
       });
 
       setBuildStage("Waiting for the note to settle…");
       let fresh: Order | null = null;
-      for (let i = 0; i < 45 && !fresh; i++) {
+      for (let i = 0; i < 30 && !fresh; i++) {
+        try {
+          await sync?.();
+        } catch {
+          /* sync is best-effort */
+        }
         await refetch();
         await sleep(2000);
         fresh =
@@ -356,6 +366,7 @@ export function SwapTab({
     me,
     pswapCreate,
     refetch,
+    sync,
     exportNote,
     remember,
     labelFor,
@@ -375,7 +386,12 @@ export function SwapTab({
         const noteId = await importNote(bytes);
 
         let found: Order | null = null;
-        for (let i = 0; i < 12 && !found; i++) {
+        for (let i = 0; i < 15 && !found; i++) {
+          try {
+            await sync?.();
+          } catch {
+            /* sync is best-effort */
+          }
           await refetch();
           await sleep(1500);
           found =
@@ -403,7 +419,7 @@ export function SwapTab({
     return () => {
       cancelled = true;
     };
-  }, [payload, accountId, importNote, refetch]);
+  }, [payload, accountId, importNote, refetch, sync]);
 
   const dismissIncoming = useCallback(() => {
     setPayload(null);
@@ -639,7 +655,8 @@ export function SwapTab({
         <h2>Send a Swap Offer</h2>
         <p className="hint">
           Set your terms, get a link, send it to whoever you are trading with.
-          The note is private — only the person holding the link can open it.
+          They open the link and settle in one click — no order book, no
+          waiting for a stranger. The payback leg stays private.
         </p>
 
         <div className="swap-form">
