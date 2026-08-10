@@ -7,9 +7,33 @@ import type {
 } from "@miden-sdk/miden-wallet-adapter-base";
 import {
   EXPLORER_BASE_URL,
+  NETWORK_LABEL,
 } from "@/config";
 import { SwapTab } from "./SwapTab";
 import "./AppContent.css";
+
+// ─── Human-readable errors ─────────────────────────────────────────────────
+// Raw SDK/WASM errors are unreadable for anyone who did not write the SDK.
+// Map the common ones; keep the original text tucked behind "Details".
+
+const ERROR_HINTS: [RegExp, string][] = [
+  [/insufficient|not enough|exceeds balance/i, "You do not have enough of that asset."],
+  [/rejected|denied|cancell?ed by user|user rejected/i, "You cancelled the request in your wallet."],
+  [/not connected|no wallet|wallet not found/i, "Your wallet is not connected."],
+  [/note.*(not found|unknown|missing)|unknown note/i, "That note is no longer available — it may already have been used."],
+  [/already consumed|already spent|nullifier/i, "That note has already been used."],
+  [/timeout|timed out|deadline/i, "The network took too long to answer. Try again."],
+  [/network|fetch|rpc|connection|offline/i, "Cannot reach the Miden network right now."],
+  [/invalid.*(address|account id)|malformed/i, "That address does not look right."],
+  [/faucet/i, "There is a problem with that token's faucet."],
+];
+
+export function humanError(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e);
+  for (const [re, msg] of ERROR_HINTS) if (re.test(raw)) return msg;
+  return "Something went wrong. Please try again.";
+}
+
 
 // ─── Constants & helpers ───────────────────────────────────────────────────
 
@@ -209,7 +233,7 @@ export function AppContent() {
     try {
       await connect();
     } catch (e) {
-      setGlobalError(e instanceof Error ? e.message : String(e));
+      setGlobalError(humanError(e));
     }
   }, [connect]);
 
@@ -221,7 +245,7 @@ export function AppContent() {
       const list = await requestAssets();
       setAssets(list);
     } catch (e) {
-      setGlobalError(e instanceof Error ? e.message : String(e));
+      setGlobalError(humanError(e));
     } finally {
       setLoadingAssets(false);
     }
@@ -261,7 +285,7 @@ export function AppContent() {
 
   const shareOnTwitter = () => {
     const text = encodeURIComponent(
-      `🔒 Check out this private dApp on @0xMiden testnet — send, bulk-airdrop, time-locked vault & privacy analytics, all ZK 👇`,
+      `🔒 Check out this private dApp on @0xMiden ${NETWORK_LABEL} — send, bulk-airdrop, time-locked vault & privacy analytics, all ZK 👇`,
     );
     const url = encodeURIComponent("https://miden-private-dex.vercel.app/");
     window.open(
@@ -326,11 +350,11 @@ export function AppContent() {
           </div>
 
           <div className="tabs">
-            <TabBtn label="💸 Send" active={tab === "send"} onClick={() => setTab("send")} />
-            <TabBtn label="🪂 Airdrop" active={tab === "airdrop"} onClick={() => setTab("airdrop")} />
-            <TabBtn label="🔐 Vault" active={tab === "vault"} onClick={() => setTab("vault")} />
-            <TabBtn label="📊 Privacy" active={tab === "privacy"} onClick={() => setTab("privacy")} />
-            <TabBtn label="🔄 Swap" active={tab === "swap"} onClick={() => setTab("swap")} />
+            <TabBtn label="Send" active={tab === "send"} onClick={() => setTab("send")} />
+            <TabBtn label="Airdrop" active={tab === "airdrop"} onClick={() => setTab("airdrop")} />
+            <TabBtn label="Vault" active={tab === "vault"} onClick={() => setTab("vault")} />
+            <TabBtn label="Privacy" active={tab === "privacy"} onClick={() => setTab("privacy")} />
+            <TabBtn label="Swap" active={tab === "swap"} onClick={() => setTab("swap")} />
           </div>
 
           <div className="card">
@@ -635,7 +659,7 @@ function SendTab({
         setStatus((cur) => (cur.txId === txId ? { stage: "idle" } : cur));
       }, 8000);
     } catch (e) {
-      setStatus({ stage: "error", error: e instanceof Error ? e.message : String(e) });
+      setStatus({ stage: "error", error: humanError(e) });
     }
   };
 
@@ -973,7 +997,7 @@ function AirdropTab({ address, assets, labelFor, requestSend, waitForTransaction
       } catch (e) {
         sent.push({
           recipient: r.recipient, amount: r.amount, ok: false,
-          error: e instanceof Error ? e.message : String(e),
+          error: humanError(e),
         });
       }
       setResults([...sent]);
@@ -1151,7 +1175,7 @@ function VaultTab({
     try {
       setGuardian(await requestGuardianInfo());
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = humanError(e);
       if (msg.includes("is not a function")) {
         // Installed wallet extension predates the Guardian API — not an error.
         setGuardian(null);
@@ -1187,7 +1211,7 @@ function VaultTab({
       const list = await requestConsumableNotes();
       setInbox(list);
     } catch (e) {
-      setInboxError(e instanceof Error ? e.message : String(e));
+      setInboxError(humanError(e));
     } finally {
       setLoadingInbox(false);
     }
@@ -1249,7 +1273,7 @@ function VaultTab({
         setRecallingId(null);
       }, 6000);
     } catch (e) {
-      setRecallStatus({ stage: "error", error: e instanceof Error ? e.message : String(e) });
+      setRecallStatus({ stage: "error", error: humanError(e) });
       setTimeout(() => {
         setRecallStatus({ stage: "idle" });
         setRecallingId(null);
