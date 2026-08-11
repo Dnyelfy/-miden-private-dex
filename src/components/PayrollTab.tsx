@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useSend, useSyncState } from "@miden-sdk/react";
 import type { Asset } from "@miden-sdk/miden-wallet-adapter-base";
 import { EXPLORER_BASE_URL } from "@/config";
@@ -115,6 +115,7 @@ export function PayrollTab({
   const [count, setCount] = useState("3");
 
   const [err, setErr] = useState<string | null>(null);
+  const [rawErr, setRawErr] = useState<string | null>(null);
   const [stage, setStage] = useState("");
   const [running, setRunning] = useState(false);
 
@@ -122,6 +123,13 @@ export function PayrollTab({
 
   const { send } = useSend();
   const { syncHeight, sync } = useSyncState();
+
+  const heightRef = useRef<number>(0);
+  useEffect(() => {
+    if (typeof syncHeight === "number" && syncHeight > 0) {
+      heightRef.current = syncHeight;
+    }
+  }, [syncHeight]);
 
   useEffect(() => {
     if (assets.length > 0 && !faucetId) setFaucetId(assets[0].faucetId);
@@ -158,10 +166,21 @@ export function PayrollTab({
 
     setRunning(true);
     try {
-      await sync?.();
-      const startHeight = syncHeight ?? 0;
+      setStage("Reading the current block…");
+      try {
+        await sync?.();
+      } catch {
+        /* best effort; the ref may already hold a usable height */
+      }
+      await new Promise((r) => setTimeout(r, 800));
+
+      const startHeight = heightRef.current || syncHeight || 0;
       if (!startHeight) {
-        throw new Error("Could not read the current block height.");
+        setErr(
+          "Could not read the current block height from the network. " +
+            "Wait for the wallet to finish syncing, then try again.",
+        );
+        return;
       }
 
       const blocksPerPeriod = Math.floor(interval.seconds / BLOCK_SECONDS);
@@ -175,6 +194,9 @@ export function PayrollTab({
         // anything the recipient has not taken can be pulled back on cancel.
         const offset = blocksPerPeriod * i;
         const unlockHeight = startHeight + offset;
+        // The recipient gets first claim; the sender can only pull back a
+        // period that was left untouched for a full interval after unlocking.
+        const reclaimHeight = unlockHeight + blocksPerPeriod;
 
         const res = await send({
           from: accountId,
@@ -183,7 +205,7 @@ export function PayrollTab({
           amount: BigInt(per),
           noteType: "private",
           ...(i > 0 ? { timelockHeight: unlockHeight } : {}),
-          recallHeight: unlockHeight,
+          recallHeight: reclaimHeight,
         });
 
         created.push({
@@ -210,6 +232,9 @@ export function PayrollTab({
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error("[payroll]", e);
+      setRawErr(
+        e instanceof Error ? `${e.name}: ${e.message}\n${e.stack ?? ""}` : String(e),
+      );
       setErr(humanError(e));
     } finally {
       setRunning(false);
@@ -343,6 +368,17 @@ export function PayrollTab({
         )}
 
         {err && <div className="error-box">{err}</div>}
+
+        {rawErr && (
+          <details className="pay-raw">
+            <summary>Technical details</summary>
+            <pre>{rawErr}</pre>
+          </details>
+        )}
+
+        <div className="pay-height">
+          block height: {heightRef.current || syncHeight || "reading…"}
+        </div>
       </div>
 
       <div className="card">
@@ -422,4 +458,8 @@ const PAYROLL_CSS = `
   padding:.3rem .55rem; border-radius:.4rem; background:rgba(255,255,255,.05); }
 .pay-period-n { opacity:.55; }
 .pay-period-when { opacity:.85; }
+.pay-raw { margin-top:.6rem; font-size:.75rem; opacity:.75; }
+.pay-raw pre { white-space:pre-wrap; word-break:break-all; max-height:12rem;
+  overflow:auto; margin:.4rem 0 0; }
+.pay-height { margin-top:.6rem; font-size:.72rem; opacity:.45; }
 `;
