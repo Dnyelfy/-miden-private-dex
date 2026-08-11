@@ -120,7 +120,6 @@ export function PayrollTab({
   const [running, setRunning] = useState(false);
 
   const [plans, setPlans] = useState<Plan[]>([]);
-  const [visibility, setVisibility] = useState<"public" | "private">("public");
 
   // Plans are per-wallet, like everything else stored locally.
   const storeKey = `${STORE}:${(accountId || "").toLowerCase()}`;
@@ -211,7 +210,7 @@ export function PayrollTab({
           to: recipient.trim(),
           assetId: faucetId,
           amount: BigInt(per),
-          noteType: visibility,
+          noteType: "public",
           ...(i > 0 ? { timelockHeight: unlockHeight } : {}),
           recallHeight: reclaimHeight,
         });
@@ -256,7 +255,6 @@ export function PayrollTab({
     interval,
     held,
     accountId,
-    visibility,
     send,
     sync,
     syncHeight,
@@ -275,6 +273,9 @@ export function PayrollTab({
         <p className="hint">
           Fund a run of payments in one sitting. Each period unlocks on its own
           date and lands in the recipient's wallet without you signing again.
+          Scheduled notes are public, so any wallet can collect them — amounts
+          are visible on the explorer. For a one-off private transfer, use the
+          Send tab.
         </p>
 
         <label className="pay-field">
@@ -345,33 +346,6 @@ export function PayrollTab({
               disabled={running}
             />
           </label>
-        </div>
-
-        <div className="pay-field">
-          <span>Visibility</span>
-          <div className="pay-vis">
-            <button
-              type="button"
-              className={`preset ${visibility === "public" ? "active" : ""}`}
-              onClick={() => setVisibility("public")}
-              disabled={running}
-            >
-              Public
-            </button>
-            <button
-              type="button"
-              className={`preset ${visibility === "private" ? "active" : ""}`}
-              onClick={() => setVisibility("private")}
-              disabled={running}
-            >
-              Private
-            </button>
-          </div>
-          <p className="hint">
-            {visibility === "public"
-              ? "Amounts are visible on the explorer, and any wallet can pick the payments up. Use this unless you know the recipient's wallet supports private notes."
-              : "Amounts stay off the explorer, but private notes are delivered peer-to-peer — the recipient's wallet has to support the note transport service or the payment will not arrive."}
-          </p>
         </div>
 
         {totalBase > 0 && (
@@ -493,7 +467,6 @@ const PAYROLL_CSS = `
   padding:.3rem .55rem; border-radius:.4rem; background:rgba(255,255,255,.05); }
 .pay-period-n { opacity:.55; }
 .pay-period-when { opacity:.85; }
-.pay-vis { display:flex; gap:.5rem; }
 .pay-raw { margin-top:.6rem; font-size:.75rem; opacity:.75; }
 .pay-raw pre { white-space:pre-wrap; word-break:break-all; max-height:12rem;
   overflow:auto; margin:.4rem 0 0; }
