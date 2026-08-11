@@ -1281,6 +1281,10 @@ function VaultTab({
   const [loadingInbox, setLoadingInbox] = useState(false);
   const [inboxError, setInboxError] = useState<string | null>(null);
   const [reclaimedNote, setReclaimedNote] = useState<{ id: string; txId: string } | null>(null);
+  // Notes claimed in this session. The network takes a while to stop listing
+  // them as consumable, so remember them here and mark them instead of
+  // letting a refresh put a live Reclaim button back on a spent note.
+  const [claimedIds, setClaimedIds] = useState<Record<string, string>>({});
   const { consume: sdkConsume } = useSdkConsume();
   const { sync } = useSyncState();
   const [recallingId, setRecallingId] = useState<string | null>(null);
@@ -1380,7 +1384,7 @@ function VaultTab({
         lsSave(scoped(VAULT_KEY, address), next);
       }
 
-      setInbox((prev) => prev.filter((n) => n.noteId !== note.noteId));
+      setClaimedIds((prev) => ({ ...prev, [note.noteId]: txId }));
       setReclaimedNote({ id: note.noteId, txId });
       onRecalled();
       setTimeout(() => { refreshInbox(); }, 8000);
@@ -1579,13 +1583,24 @@ function VaultTab({
                     {shortAddr(note.noteId, 10, 6)}
                   </span>
                 </div>
-                <button
-                  className="small primary"
-                  onClick={() => consumeNote(note)}
-                  disabled={isRecalling || !firstAsset}
-                >
-                  {isRecalling ? "…" : "🔓 Reclaim"}
-                </button>
+                {claimedIds[note.noteId] ? (
+                  <a
+                    className="badge badge-completed"
+                    href={`${EXPLORER_BASE_URL}/tx/${claimedIds[note.noteId]}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    ✅ Claimed
+                  </a>
+                ) : (
+                  <button
+                    className="small primary"
+                    onClick={() => consumeNote(note)}
+                    disabled={isRecalling || !firstAsset}
+                  >
+                    {isRecalling ? "…" : "🔓 Reclaim"}
+                  </button>
+                )}
               </div>
               {isRecalling && recallStatus.stage !== "idle" && (
                 <TxStatusIndicator status={recallStatus} />
