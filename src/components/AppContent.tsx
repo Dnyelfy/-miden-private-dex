@@ -286,7 +286,7 @@ export function AppContent() {
 
   const shareOnTwitter = () => {
     const text = encodeURIComponent(
-      `🔒 Check out this private dApp on @0xMiden ${NETWORK_LABEL} — send, bulk-airdrop, time-locked vault & privacy analytics, all ZK 👇`,
+      `🔒 Check out this private dApp on @0xMiden ${NETWORK_LABEL} — send, bulk pay, recurring payroll, time-locked vault & privacy analytics, all ZK 👇`,
     );
     const url = encodeURIComponent("https://miden-private-dex.vercel.app/");
     window.open(
@@ -310,7 +310,7 @@ export function AppContent() {
           </div>
         </div>
         <p className="subtitle">
-          Private send · bulk airdrop · time-locked vault ·
+          Private send · bulk pay · recurring payroll · time-locked vault ·
           privacy analytics on{" "}
           <span className="badge-net">Miden Testnet v0.15</span>
         </p>
@@ -352,7 +352,7 @@ export function AppContent() {
 
           <div className="tabs">
             <TabBtn label="Send" active={tab === "send"} onClick={() => setTab("send")} />
-            <TabBtn label="Airdrop" active={tab === "airdrop"} onClick={() => setTab("airdrop")} />
+            <TabBtn label="Bulk Pay" active={tab === "airdrop"} onClick={() => setTab("airdrop")} />
             <TabBtn label="Vault" active={tab === "vault"} onClick={() => setTab("vault")} />
             <TabBtn label="Privacy" active={tab === "privacy"} onClick={() => setTab("privacy")} />
             <TabBtn label="Swap" active={tab === "swap"} onClick={() => setTab("swap")} />
@@ -1037,7 +1037,7 @@ function AirdropTab({ address, assets, labelFor, requestSend, waitForTransaction
   return (
     <>
       <div className="card">
-        <h2>🪂 Bulk Private Airdrop</h2>
+        <h2>Bulk Private Payments</h2>
         <p className="hint" style={{ marginBottom: "0.8rem" }}>
           Send to many recipients. Paste <code>address</code> or <code>address,amount</code> per line.
         </p>
@@ -1094,7 +1094,7 @@ function AirdropTab({ address, assets, labelFor, requestSend, waitForTransaction
           style={{ width: "100%", marginTop: "0.8rem" }}>
           {running
             ? `Sending… ${progress.done}/${progress.total}`
-            : `🪂 Airdrop to ${valid.length} addresses`}
+            : `Pay ${valid.length} addresses`}
         </button>
 
         {running && (
@@ -1291,7 +1291,7 @@ function VaultTab({
     <>
       <div className="card">
         <div className="card-head">
-          <h2>🛡️ Guardian</h2>
+          <h2>Guardian</h2>
           <button className="ghost" onClick={refreshGuardian} disabled={loadingGuardian}>
             {loadingGuardian ? "…" : "↻"}
           </button>
@@ -1348,7 +1348,7 @@ function VaultTab({
       </div>
 
       <div className="card">
-        <h2>🔐 Vault — Recallable Transfers</h2>
+        <h2>Vault — Recallable Transfers</h2>
         <p className="hint" style={{ marginBottom: "0.5rem" }}>
           Track notes you sent with a recall window. When ready, reclaim them
           right from here — no need to open the wallet.
@@ -1422,7 +1422,7 @@ function VaultTab({
       {/* Reclaimable notes from wallet */}
       <div className="card">
         <div className="card-head">
-          <h2>📥 Reclaimable Notes</h2>
+          <h2>Reclaimable Notes</h2>
           <button className="ghost" onClick={refreshInbox} disabled={loadingInbox}>
             {loadingInbox ? "…" : "↻"}
           </button>
@@ -1513,7 +1513,7 @@ function PrivacyTab({
   if (stats.total === 0) {
     return (
       <div className="card">
-        <h2>📊 Privacy Dashboard</h2>
+        <h2>Privacy Dashboard</h2>
         <p className="empty">Send a few transactions first — your privacy metrics will appear here.</p>
       </div>
     );
@@ -1553,7 +1553,7 @@ function PrivacyTab({
         <h2>Activity by type</h2>
         <BarChart data={[
           { label: "💸 Send", value: typeCount.send, color: "#6366f1" },
-          { label: "🪂 Airdrop", value: typeCount.airdrop, color: "#ec4899" },
+          { label: "Bulk Pay", value: typeCount.airdrop, color: "#ec4899" },
           { label: "🔐 Vault", value: typeCount.vault, color: "#f59e0b" },
           { label: "↩️ Recall", value: typeCount.recall, color: "#22c55e" },
         ]} />
