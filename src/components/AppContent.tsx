@@ -28,10 +28,37 @@ const ERROR_HINTS: [RegExp, string][] = [
   [/faucet/i, "There is a problem with that token's faucet."],
 ];
 
+let LAST_RAW_ERROR = "";
+
+export function lastRawError(): string {
+  return LAST_RAW_ERROR;
+}
+
 export function humanError(e: unknown): string {
-  const raw = e instanceof Error ? e.message : String(e);
+  const raw =
+    e instanceof Error ? `${e.name}: ${e.message}\n${e.stack ?? ""}` : String(e);
+  LAST_RAW_ERROR = raw;
+  // eslint-disable-next-line no-console
+  console.error("[miden]", e);
   for (const [re, msg] of ERROR_HINTS) if (re.test(raw)) return msg;
   return "Something went wrong. Please try again.";
+}
+
+/** Error box that keeps the underlying message one click away. */
+function ErrorBox({ message }: { message: string }) {
+  const raw = lastRawError();
+  return (
+    <div className="error-box">
+      {message}
+      {raw && (
+        <details style={{ marginTop: "0.5rem", fontSize: "0.75rem", opacity: 0.8 }}>
+          <summary style={{ cursor: "pointer" }}>Technical details</summary>
+          <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-all",
+            maxHeight: "12rem", overflow: "auto", margin: "0.4rem 0 0" }}>{raw}</pre>
+        </details>
+      )}
+    </div>
+  );
 }
 
 
@@ -346,7 +373,7 @@ export function AppContent() {
               </button>
             </>
           )}
-          {globalError && <div className="error-box">{globalError}</div>}
+          {globalError && <ErrorBox message={globalError} />}
         </div>
       ) : (
         <>
@@ -1303,7 +1330,7 @@ function VaultTab({
             {loadingGuardian ? "…" : "↻"}
           </button>
         </div>
-        {guardianError && <div className="error-box">{guardianError}</div>}
+        {guardianError && <ErrorBox message={guardianError} />}
         {!guardianError && !guardian && (
           <p className="empty">
             {loadingGuardian
@@ -1438,7 +1465,7 @@ function VaultTab({
           Notes your wallet can consume right now — including expired recallable transfers you sent.
         </p>
 
-        {inboxError && <div className="error-box">{inboxError}</div>}
+        {inboxError && <ErrorBox message={inboxError} />}
 
         {inbox.length === 0 && !loadingInbox && (
           <p className="empty">No notes waiting to be consumed.</p>
