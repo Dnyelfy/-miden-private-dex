@@ -2,7 +2,13 @@ import { type ReactNode } from "react";
 import { MidenProvider } from "@miden-sdk/react";
 import { MidenFiSignerProvider } from "@miden-sdk/miden-wallet-adapter-react";
 import { WalletAdapterNetwork } from "@miden-sdk/miden-wallet-adapter-base";
-import { APP_NAME, MIDEN_RPC_URL, MIDEN_PROVER, NETWORK } from "@/config";
+import {
+  APP_NAME,
+  MIDEN_RPC_URL,
+  MIDEN_PROVER,
+  NETWORK,
+  NOTE_TRANSPORT_URL,
+} from "@/config";
 
 // The adapter enum does not list mainnet yet (SDK 0.15.x). Passing the plain
 // string keeps this forward-compatible: the day the adapter adds it, this
@@ -22,7 +28,11 @@ export function AppProviders({ children }: { children: ReactNode }) {
       autoConnect
     >
       <MidenProvider
-        config={{ rpcUrl: MIDEN_RPC_URL, prover: MIDEN_PROVER }}
+        config={{
+          rpcUrl: MIDEN_RPC_URL,
+          prover: MIDEN_PROVER,
+          noteTransportUrl: NOTE_TRANSPORT_URL,
+        }}
         loadingComponent={
           <div style={{padding:"2rem",textAlign:"center",color:"#888"}}>
             Loading Miden WASM...
