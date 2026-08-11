@@ -1279,6 +1279,7 @@ function VaultTab({
   const [inbox, setInbox] = useState<InputNoteDetails[]>([]);
   const [loadingInbox, setLoadingInbox] = useState(false);
   const [inboxError, setInboxError] = useState<string | null>(null);
+  const [reclaimedNote, setReclaimedNote] = useState<{ id: string; txId: string } | null>(null);
   const [recallingId, setRecallingId] = useState<string | null>(null);
   const [recallStatus, setRecallStatus] = useState<TxStatus>({ stage: "idle" });
   const [now, setNow] = useState(Date.now());
@@ -1314,6 +1315,8 @@ function VaultTab({
   const consumeNote = async (note: InputNoteDetails) => {
     if (!requestConsume) return;
     setRecallingId(note.noteId);
+    setInboxError(null);
+    setReclaimedNote(null);
     setRecallStatus({ stage: "signing" });
     try {
       const firstAsset = note.assets[0];
@@ -1352,8 +1355,10 @@ function VaultTab({
         lsSave(scoped(VAULT_KEY, address), next);
       }
 
+      setInbox((prev) => prev.filter((n) => n.noteId !== note.noteId));
+      setReclaimedNote({ id: note.noteId, txId });
       onRecalled();
-      refreshInbox();
+      setTimeout(() => { refreshInbox(); }, 8000);
 
       setTimeout(() => {
         setRecallStatus({ stage: "idle" });
@@ -1515,6 +1520,21 @@ function VaultTab({
         </p>
 
         {inboxError && <ErrorBox message={inboxError} />}
+
+        {reclaimedNote && (
+          <div className="success-box">
+            Claimed — the note has been consumed. Your balance updates once the
+            network confirms it.{" "}
+            <a
+              href={`${EXPLORER_BASE_URL}/tx/${reclaimedNote.txId}`}
+              target="_blank"
+              rel="noreferrer"
+              className="tx-link"
+            >
+              view transaction
+            </a>
+          </div>
+        )}
 
         {inbox.length === 0 && !loadingInbox && (
           <p className="empty">No notes waiting to be consumed.</p>
