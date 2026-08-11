@@ -32,6 +32,21 @@ const ERROR_HINTS: [RegExp, string][] = [
   [/faucet/i, "There is a problem with that token's faucet."],
 ];
 
+/** The SDK reports note visibility as a NoteType enum (Private = 0,
+ *  Public = 1), but the wallet adapter expects the literal string. Passing the
+ *  enum straight through makes the adapter call charAt on a number. */
+function noteTypeString(value: unknown): "public" | "private" {
+  if (typeof value === "number") return value === 1 ? "public" : "private";
+  if (typeof value === "string") {
+    return value.toLowerCase().includes("public") ? "public" : "private";
+  }
+  try {
+    return String(value).toLowerCase().includes("public") ? "public" : "private";
+  } catch {
+    return "private";
+  }
+}
+
 let LAST_RAW_ERROR = "";
 
 export function lastRawError(): string {
@@ -1304,17 +1319,19 @@ function VaultTab({
       const firstAsset = note.assets[0];
       if (!firstAsset) throw new Error("Note has no assets");
 
+      const resolvedType = noteTypeString(note.noteType);
+
       const txId = await requestConsume({
-        faucetId: firstAsset.faucetId,
-        noteId: note.noteId,
-        noteType: (note.noteType as unknown as "public" | "private") ?? "private",
+        faucetId: String(firstAsset.faucetId),
+        noteId: String(note.noteId),
+        noteType: resolvedType,
         amount: Number(firstAsset.amount),
       });
       setRecallStatus({ stage: "broadcasting", txId });
       logTx({
         txId, type: "recall",
         recipient: "self", faucetId: firstAsset.faucetId,
-        amount: firstAsset.amount, noteType: "private", ts: Date.now(),
+        amount: firstAsset.amount, noteType: resolvedType, ts: Date.now(),
       });
 
       if (waitForTransaction) {
