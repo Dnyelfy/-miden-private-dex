@@ -9,7 +9,6 @@ import {
   EXPLORER_BASE_URL,
   NETWORK_LABEL,
 } from "@/config";
-import { SwapTab } from "./SwapTab";
 import { PayrollTab } from "./PayrollTab";
 import "./AppContent.css";
 
@@ -90,6 +89,12 @@ function formatDuration(seconds: number): string {
 const ALIAS_KEY = "miden_dex_asset_aliases_v1";
 const VAULT_KEY = "miden_dex_vault_v1";
 const TX_LOG_KEY = "miden_dex_txlog_v1";
+
+/** Everything stored locally is per-wallet. Without this, connecting a second
+ *  account shows the first account's aliases, vault and transaction log. */
+function scoped(base: string, account: string | null | undefined): string {
+  return account ? `${base}:${account.toLowerCase()}` : base;
+}
 
 function lsLoad<T>(key: string, fallback: T): T {
   try {
@@ -188,7 +193,7 @@ interface TxStatus {
 
 // ─── Main ──────────────────────────────────────────────────────────────────
 
-type Tab = "send" | "airdrop" | "vault" | "privacy" | "swap" | "payroll";
+type Tab = "send" | "airdrop" | "vault" | "privacy" | "payroll";
 
 export function AppContent() {
   const wallet = useMidenFiWallet();
@@ -214,13 +219,15 @@ export function AppContent() {
   const [loadingAssets, setLoadingAssets] = useState(false);
   const [addrCopied, setAddrCopied] = useState(false);
   const [globalError, setGlobalError] = useState<string | null>(null);
-  const [aliases, setAliases] = useState<Record<string, string>>(() =>
-    lsLoad(ALIAS_KEY, {} as Record<string, string>),
-  );
+  const [aliases, setAliases] = useState<Record<string, string>>({});
   const [editingAlias, setEditingAlias] = useState<string | null>(null);
-  const [txLog, setTxLog] = useState<TxLogEntry[]>(() =>
-    lsLoad(TX_LOG_KEY, [] as TxLogEntry[]),
-  );
+  const [txLog, setTxLog] = useState<TxLogEntry[]>([]);
+
+  // Reload local data whenever the connected account changes.
+  useEffect(() => {
+    setAliases(lsLoad(scoped(ALIAS_KEY, address), {} as Record<string, string>));
+    setTxLog(lsLoad(scoped(TX_LOG_KEY, address), [] as TxLogEntry[]));
+  }, [address]);
 
   useEffect(() => {
     if (!connected && !connecting && wallets.length > 0) {
@@ -269,7 +276,7 @@ export function AppContent() {
     if (name.trim()) next[faucetId] = name.trim().toUpperCase().slice(0, 8);
     else delete next[faucetId];
     setAliases(next);
-    lsSave(ALIAS_KEY, next);
+    lsSave(scoped(ALIAS_KEY, address), next);
     setEditingAlias(null);
   };
 
@@ -279,10 +286,10 @@ export function AppContent() {
   const logTx = useCallback((entry: TxLogEntry) => {
     setTxLog((prev) => {
       const next = [entry, ...prev].slice(0, 500);
-      lsSave(TX_LOG_KEY, next);
+      lsSave(scoped(TX_LOG_KEY, address), next);
       return next;
     });
-  }, []);
+  }, [address]);
 
   const shareOnTwitter = () => {
     const text = encodeURIComponent(
@@ -355,7 +362,6 @@ export function AppContent() {
             <TabBtn label="Bulk Pay" active={tab === "airdrop"} onClick={() => setTab("airdrop")} />
             <TabBtn label="Vault" active={tab === "vault"} onClick={() => setTab("vault")} />
             <TabBtn label="Privacy" active={tab === "privacy"} onClick={() => setTab("privacy")} />
-            <TabBtn label="Swap" active={tab === "swap"} onClick={() => setTab("swap")} />
             <TabBtn label="Payroll" active={tab === "payroll"} onClick={() => setTab("payroll")} />
           </div>
 
@@ -426,6 +432,7 @@ export function AppContent() {
           )}
           {tab === "vault" && (
             <VaultTab
+              address={address}
               labelFor={labelFor}
               requestGuardianInfo={requestGuardianInfo}
               requestConsume={requestConsume}
@@ -438,10 +445,6 @@ export function AppContent() {
           {tab === "privacy" && (
             <PrivacyTab txLog={txLog} labelFor={labelFor} />
           )}
-          {tab === "swap" && address && (
-            <SwapTab accountId={address} assets={assets} labelFor={labelFor} />
-          )}
-
           {tab === "payroll" && address && (
             <PayrollTab accountId={address} assets={assets} labelFor={labelFor} />
           )}
@@ -628,7 +631,7 @@ function SendTab({
       });
 
       if (recallable) {
-        const vault = lsLoad<VaultEntry[]>(VAULT_KEY, []);
+        const vault = lsLoad<VaultEntry[]>(scoped(VAULT_KEY, address), []);
         const entry: VaultEntry = {
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           recipient: recipient.trim(),
@@ -638,7 +641,7 @@ function SendTab({
           txId,
           ts: Date.now(),
         };
-        lsSave(VAULT_KEY, [entry, ...vault]);
+        lsSave(scoped(VAULT_KEY, address), [entry, ...vault]);
       }
 
       // Wait for confirmation
@@ -1146,6 +1149,7 @@ function AirdropTab({ address, assets, labelFor, requestSend, waitForTransaction
 // ─── VAULT TAB ─────────────────────────────────────────────────────────────
 
 interface VaultTabProps {
+  address: string | null;
   labelFor: (faucetId: string) => string;
   requestGuardianInfo: ReturnType<typeof useMidenFiWallet>["requestGuardianInfo"];
   requestConsume: ReturnType<typeof useMidenFiWallet>["requestConsume"];
@@ -1163,7 +1167,7 @@ const GUARDIAN_PROVIDER_LABEL: Record<string, string> = {
 };
 
 function VaultTab({
-  labelFor, requestGuardianInfo, requestConsume, requestConsumableNotes,
+  address, labelFor, requestGuardianInfo, requestConsume, requestConsumableNotes,
   waitForTransaction, onRecalled, logTx,
 }: VaultTabProps) {
   const [guardian, setGuardian] = useState<GuardianInfo | null>(null);
@@ -1196,7 +1200,10 @@ function VaultTab({
 
   useEffect(() => { refreshGuardian(); }, [refreshGuardian]);
 
-  const [vault, setVault] = useState<VaultEntry[]>(() => lsLoad(VAULT_KEY, [] as VaultEntry[]));
+  const [vault, setVault] = useState<VaultEntry[]>([]);
+  useEffect(() => {
+    setVault(lsLoad(scoped(VAULT_KEY, address), [] as VaultEntry[]));
+  }, [address]);
   const [inbox, setInbox] = useState<InputNoteDetails[]>([]);
   const [loadingInbox, setLoadingInbox] = useState(false);
   const [inboxError, setInboxError] = useState<string | null>(null);
@@ -1229,7 +1236,7 @@ function VaultTab({
     if (!confirm("Remove from vault?")) return;
     const next = vault.filter((v) => v.id !== id);
     setVault(next);
-    lsSave(VAULT_KEY, next);
+    lsSave(scoped(VAULT_KEY, address), next);
   };
 
   const consumeNote = async (note: InputNoteDetails) => {
@@ -1268,7 +1275,7 @@ function VaultTab({
           v.id === matchingEntry.id ? { ...v, recalled: true, recallTxId: txId } : v,
         );
         setVault(next);
-        lsSave(VAULT_KEY, next);
+        lsSave(scoped(VAULT_KEY, address), next);
       }
 
       onRecalled();
