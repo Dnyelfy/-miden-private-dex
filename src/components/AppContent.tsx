@@ -9,7 +9,9 @@ import {
   EXPLORER_BASE_URL,
   NETWORK_LABEL,
 } from "@/config";
+import { SwapTab } from "./SwapTab";
 import { PayrollTab } from "./PayrollTab";
+import { InboxTab } from "./InboxTab";
 import "./AppContent.css";
 
 // ─── Human-readable errors ─────────────────────────────────────────────────
@@ -25,6 +27,9 @@ const ERROR_HINTS: [RegExp, string][] = [
   [/timeout|timed out|deadline/i, "The network took too long to answer. Try again."],
   [/network|fetch|rpc|connection|offline/i, "Cannot reach the Miden network right now."],
   [/invalid.*(address|account id)|malformed/i, "That address does not look right."],
+  [/timelock|not yet|too early|locked|before block|height/i, "This payment is not unlocked yet — it becomes claimable on its scheduled date."],
+  [/already consumed|already spent|nullifier/i, "This note has already been claimed."],
+  [/no assets/i, "This note carries no assets."],
   [/faucet/i, "There is a problem with that token's faucet."],
 ];
 
@@ -121,6 +126,27 @@ const TX_LOG_KEY = "miden_dex_txlog_v1";
  *  account shows the first account's aliases, vault and transaction log. */
 function scoped(base: string, account: string | null | undefined): string {
   return account ? `${base}:${account.toLowerCase()}` : base;
+}
+
+/** Data saved before storage was split per wallet lives under the bare key.
+ *  Hand it to the first account that connects, then clear it, so existing
+ *  history is not lost when the app starts scoping by address. */
+function loadWithMigration<T>(base: string, account: string | null | undefined, fallback: T): T {
+  const key = scoped(base, account);
+  const current = lsLoad<T | null>(key, null);
+  if (current !== null) return current;
+
+  const legacy = lsLoad<T | null>(base, null);
+  if (legacy !== null && account) {
+    lsSave(key, legacy);
+    try {
+      localStorage.removeItem(base);
+    } catch {
+      /* ignore */
+    }
+    return legacy;
+  }
+  return fallback;
 }
 
 function lsLoad<T>(key: string, fallback: T): T {
@@ -220,7 +246,7 @@ interface TxStatus {
 
 // ─── Main ──────────────────────────────────────────────────────────────────
 
-type Tab = "send" | "airdrop" | "vault" | "privacy" | "payroll";
+type Tab = "send" | "inbox" | "airdrop" | "vault" | "privacy" | "swap" | "payroll";
 
 export function AppContent() {
   const wallet = useMidenFiWallet();
@@ -252,8 +278,8 @@ export function AppContent() {
 
   // Reload local data whenever the connected account changes.
   useEffect(() => {
-    setAliases(lsLoad(scoped(ALIAS_KEY, address), {} as Record<string, string>));
-    setTxLog(lsLoad(scoped(TX_LOG_KEY, address), [] as TxLogEntry[]));
+    setAliases(loadWithMigration(ALIAS_KEY, address, {} as Record<string, string>));
+    setTxLog(loadWithMigration(TX_LOG_KEY, address, [] as TxLogEntry[]));
   }, [address]);
 
   useEffect(() => {
@@ -386,9 +412,11 @@ export function AppContent() {
 
           <div className="tabs">
             <TabBtn label="Send" active={tab === "send"} onClick={() => setTab("send")} />
+            <TabBtn label="Inbox" active={tab === "inbox"} onClick={() => setTab("inbox")} />
             <TabBtn label="Bulk Pay" active={tab === "airdrop"} onClick={() => setTab("airdrop")} />
             <TabBtn label="Vault" active={tab === "vault"} onClick={() => setTab("vault")} />
             <TabBtn label="Privacy" active={tab === "privacy"} onClick={() => setTab("privacy")} />
+            <TabBtn label="Swap" active={tab === "swap"} onClick={() => setTab("swap")} />
             <TabBtn label="Payroll" active={tab === "payroll"} onClick={() => setTab("payroll")} />
           </div>
 
@@ -472,6 +500,14 @@ export function AppContent() {
           {tab === "privacy" && (
             <PrivacyTab txLog={txLog} labelFor={labelFor} />
           )}
+          {tab === "inbox" && address && (
+            <InboxTab accountId={address} labelFor={labelFor} onClaimed={loadAssets} />
+          )}
+
+          {tab === "swap" && address && (
+            <SwapTab accountId={address} assets={assets} labelFor={labelFor} />
+          )}
+
           {tab === "payroll" && address && (
             <PayrollTab accountId={address} assets={assets} labelFor={labelFor} />
           )}
@@ -1229,7 +1265,7 @@ function VaultTab({
 
   const [vault, setVault] = useState<VaultEntry[]>([]);
   useEffect(() => {
-    setVault(lsLoad(scoped(VAULT_KEY, address), [] as VaultEntry[]));
+    setVault(loadWithMigration(VAULT_KEY, address, [] as VaultEntry[]));
   }, [address]);
   const [inbox, setInbox] = useState<InputNoteDetails[]>([]);
   const [loadingInbox, setLoadingInbox] = useState(false);
@@ -1313,7 +1349,9 @@ function VaultTab({
         setRecallingId(null);
       }, 6000);
     } catch (e) {
-      setRecallStatus({ stage: "error", error: humanError(e) });
+      const msg = humanError(e);
+      setRecallStatus({ stage: "error", error: msg });
+      setInboxError(msg);
       setTimeout(() => {
         setRecallStatus({ stage: "idle" });
         setRecallingId(null);
