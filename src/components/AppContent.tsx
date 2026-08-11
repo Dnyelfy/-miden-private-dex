@@ -11,7 +11,6 @@ import {
 } from "@/config";
 import { SwapTab } from "./SwapTab";
 import { PayrollTab } from "./PayrollTab";
-import { InboxTab } from "./InboxTab";
 import "./AppContent.css";
 
 // ─── Human-readable errors ─────────────────────────────────────────────────
@@ -246,7 +245,7 @@ interface TxStatus {
 
 // ─── Main ──────────────────────────────────────────────────────────────────
 
-type Tab = "send" | "inbox" | "airdrop" | "vault" | "privacy" | "swap" | "payroll";
+type Tab = "send" | "airdrop" | "vault" | "privacy" | "swap" | "payroll";
 
 export function AppContent() {
   const wallet = useMidenFiWallet();
@@ -412,7 +411,6 @@ export function AppContent() {
 
           <div className="tabs">
             <TabBtn label="Send" active={tab === "send"} onClick={() => setTab("send")} />
-            <TabBtn label="Inbox" active={tab === "inbox"} onClick={() => setTab("inbox")} />
             <TabBtn label="Bulk Pay" active={tab === "airdrop"} onClick={() => setTab("airdrop")} />
             <TabBtn label="Vault" active={tab === "vault"} onClick={() => setTab("vault")} />
             <TabBtn label="Privacy" active={tab === "privacy"} onClick={() => setTab("privacy")} />
@@ -500,10 +498,6 @@ export function AppContent() {
           {tab === "privacy" && (
             <PrivacyTab txLog={txLog} labelFor={labelFor} />
           )}
-          {tab === "inbox" && address && (
-            <InboxTab accountId={address} labelFor={labelFor} onClaimed={loadAssets} />
-          )}
-
           {tab === "swap" && address && (
             <SwapTab accountId={address} assets={assets} labelFor={labelFor} />
           )}
