@@ -27,6 +27,17 @@ export const MIDEN_RPC_URL: string =
 export const MIDEN_PROVER: string =
   import.meta.env.VITE_MIDEN_PROVER ?? NETWORK;
 
+// Private notes travel peer-to-peer over the note transport service. Without
+// this the client refuses to send them: "note transport is disabled".
+const TRANSPORTS: Record<Network, string> = {
+  devnet: "https://transport.devnet.miden.io",
+  testnet: "https://transport.miden.io",
+  mainnet: "https://transport.miden.io",
+};
+
+export const NOTE_TRANSPORT_URL: string =
+  import.meta.env.VITE_NOTE_TRANSPORT_URL ?? TRANSPORTS[NETWORK];
+
 const EXPLORERS: Record<Network, string> = {
   devnet: "https://devnet.midenscan.com",
   testnet: "https://testnet.midenscan.com",
