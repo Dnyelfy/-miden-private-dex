@@ -7,7 +7,6 @@ import {
   useSyncState,
   accountIdsEqual,
   useExportNote,
-  useImportNote,
   type PswapLineageRecord,
 } from "@miden-sdk/react";
 import type { Asset } from "@miden-sdk/miden-wallet-adapter-base";
@@ -22,7 +21,6 @@ const FACTOR = 10 ** DECIMALS;
 const STATE_ACTIVE = 0;
 
 const LINK_STORE = "miden_swap_links_v1";
-const MAX_URL_LEN = 7500;
 const FAUCET_STORE = "miden_known_faucets_v1";
 
 // ─── Human-readable errors ─────────────────────────────────────────────────
@@ -82,26 +80,6 @@ function lsSave(key: string, val: unknown) {
   } catch {
     /* quota / private mode */
   }
-}
-
-// ─── base64url, chunked so large notes do not blow the call stack ──────────
-
-function b64urlEncode(bytes: Uint8Array): string {
-  let bin = "";
-  const CHUNK = 0x8000;
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-  }
-  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function b64urlDecode(text: string): Uint8Array {
-  const b64 = text.replace(/-/g, "+").replace(/_/g, "/");
-  const pad = b64.length % 4 ? "=".repeat(4 - (b64.length % 4)) : "";
-  const bin = atob(b64 + pad);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -204,7 +182,6 @@ export function SwapTab({
     usePswapLineagesFor(accountId || null);
   const { sync } = useSyncState();
   const { exportNote } = useExportNote();
-  const { importNote } = useImportNote();
 
 
   // Keep a ref mirror so async loops can read the freshest orders.
@@ -379,10 +356,9 @@ export function SwapTab({
       }
 
       setBuildStage("Waiting for the block that carries it…");
-      const bytes = await exportWhenReady(fresh.tipNoteId);
-      const encoded = b64urlEncode(bytes);
+      await exportWhenReady(fresh.tipNoteId); // confirms it is in a block
       const base = `${window.location.origin}${window.location.pathname}`;
-      const url = `${base}#offer=${encoded}`;
+      const url = `${base}#offer=${fresh.tipNoteId}`;
 
       setLink(url);
       setSavedLinks((prev) => ({ ...prev, [fresh!.orderId]: url }));
@@ -422,27 +398,27 @@ export function SwapTab({
       setLoadingIncoming(true);
       setIncomingErr(null);
       try {
-        const bytes = b64urlDecode(payload);
-        const noteId = await importNote(bytes);
+        const noteId = payload.trim();
 
         let found: Order | null = null;
-        for (let i = 0; i < 15 && !found; i++) {
+        for (let i = 0; i < 20 && !found; i++) {
           try {
             await sync?.();
           } catch {
-            /* sync is best-effort */
+            /* best effort */
           }
           await refetch();
           await sleep(1500);
-          found =
-            ordersRef.current.find((o) => o.tipNoteId === noteId) ?? null;
+          found = ordersRef.current.find((o) => o.tipNoteId === noteId) ?? null;
         }
         if (cancelled) return;
 
         if (!found) {
           setIncomingErr(
-            "This offer could not be read. It may have already been filled or cancelled.",
+            "This offer could not be found. It may already have been filled or cancelled.",
           );
+        } else if (found.state !== STATE_ACTIVE) {
+          setIncomingErr("This offer is closed.");
         } else {
           setIncoming(found);
           setFillAmount(fmt(found.remainingRequested));
@@ -459,7 +435,7 @@ export function SwapTab({
     return () => {
       cancelled = true;
     };
-  }, [payload, accountId, importNote, refetch, sync, explain]);
+  }, [payload, accountId, refetch, sync, explain]);
 
   const dismissIncoming = useCallback(() => {
     setPayload(null);
@@ -498,9 +474,9 @@ export function SwapTab({
       setLinking(order.orderId);
       setFormErr(null);
       try {
-        const bytes = await exportWhenReady(order.tipNoteId);
+        await exportWhenReady(order.tipNoteId);
         const base = `${window.location.origin}${window.location.pathname}`;
-        const url = `${base}#offer=${b64urlEncode(bytes)}`;
+        const url = `${base}#offer=${order.tipNoteId}`;
         setSavedLinks((prev) => ({ ...prev, [order.orderId]: url }));
         await copy(url);
       } catch (err) {
@@ -544,7 +520,6 @@ export function SwapTab({
   }, []);
 
   const busy = building || creating || filling || cancelling;
-  const linkTooLong = link !== null && link.length > MAX_URL_LEN;
 
   // ── Render ───────────────────────────────────────────────────────────────
 
@@ -736,11 +711,9 @@ export function SwapTab({
         {link && (
           <div className="swap-link-box">
             <div className="swap-link-label">
-              {linkTooLong
-                ? "This offer is too large for a link — copy the code and send it as a message."
-                : "Your offer link is ready. Send it to your counterparty."}
+              Your offer link is ready. Send it to your counterparty.
             </div>
-            <textarea readOnly value={link} rows={3} className="swap-link" />
+            <input readOnly value={link} className="swap-link" />
             <button className="primary" onClick={() => copy(link)}>
               {copied ? "Copied ✓" : "Copy"}
             </button>
