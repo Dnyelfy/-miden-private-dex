@@ -8,14 +8,10 @@ import {
   accountIdsEqual,
   useExportNote,
   useImportNote,
-  useCreateFaucet,
-  useMint,
-  useConsume,
-  useWaitForNotes,
   type PswapLineageRecord,
 } from "@miden-sdk/react";
 import type { Asset } from "@miden-sdk/miden-wallet-adapter-base";
-import { EXPLORER_BASE_URL, IS_MAINNET } from "@/config";
+import { EXPLORER_BASE_URL } from "@/config";
 
 // ─── Constants & helpers ───────────────────────────────────────────────────
 
@@ -187,16 +183,8 @@ export function SwapTab({
     lsLoad(LINK_STORE, {} as Record<string, string>),
   );
 
-  // ── Dev tools (testnet only) ──
   const [rawErr, setRawErr] = useState<string | null>(null);
   const [diagOpen, setDiagOpen] = useState(false);
-  const [devOpen, setDevOpen] = useState(false);
-  const [symbol, setSymbol] = useState("USDX");
-  const [mintAmount, setMintAmount] = useState("1000");
-  const [factoryStage, setFactoryStage] = useState("");
-  const [factoryErr, setFactoryErr] = useState<string | null>(null);
-  const [newFaucet, setNewFaucet] = useState<string | null>(null);
-  const [running, setRunning] = useState(false);
 
   // Keeps the real error text around while still showing something readable.
   const explain = useCallback((e: unknown) => {
@@ -217,10 +205,6 @@ export function SwapTab({
   const { exportNote } = useExportNote();
   const { importNote } = useImportNote();
 
-  const { createFaucet, isCreating: makingFaucet } = useCreateFaucet();
-  const { mint } = useMint();
-  const { consume } = useConsume();
-  const { waitForConsumableNotes } = useWaitForNotes();
 
   // Keep a ref mirror so async loops can read the freshest orders.
   const ordersRef = useRef<Order[]>([]);
@@ -530,71 +514,6 @@ export function SwapTab({
     }
   }, []);
 
-  // ── Test token factory (testnet only) ────────────────────────────────────
-
-  const handleMakeToken = useCallback(async () => {
-    const sym = symbol.trim().toUpperCase();
-    const amt = toBase(mintAmount);
-    setFactoryErr(null);
-    setNewFaucet(null);
-
-    if (!sym) return setFactoryErr("Pick a symbol.");
-    if (amt <= 0) return setFactoryErr("Pick an amount.");
-
-    setRunning(true);
-    try {
-      setFactoryStage("Creating the faucet…");
-      const faucet = await createFaucet({
-        tokenSymbol: sym,
-        decimals: DECIMALS,
-        maxSupply: BigInt(amt) * 1000n,
-        storageMode: "public",
-      });
-      const faucetId = faucet.id().toString();
-
-      setFactoryStage("Minting to your wallet…");
-      await mint({
-        targetAccountId: accountId,
-        faucetId,
-        amount: BigInt(amt),
-        noteType: "public",
-      });
-
-      setFactoryStage("Waiting for the note…");
-      const notes = await waitForConsumableNotes({
-        accountId,
-        minCount: 1,
-        timeoutMs: 120000,
-      });
-
-      setFactoryStage("Claiming it…");
-      await consume({
-        accountId,
-        notes: notes.map((n) => n.inputNoteRecord()),
-      });
-
-      setNewFaucet(faucetId);
-      remember(faucetId, sym);
-      setWantOther(false);
-      setWantFaucet(faucetId);
-    } catch (err) {
-      setFactoryErr(explain(err));
-    } finally {
-      setRunning(false);
-      setFactoryStage("");
-    }
-  }, [
-    symbol,
-    mintAmount,
-    accountId,
-    createFaucet,
-    mint,
-    waitForConsumableNotes,
-    consume,
-    remember,
-    explain,
-  ]);
-
   const busy = building || creating || filling || cancelling;
   const linkTooLong = link !== null && link.length > MAX_URL_LEN;
 
@@ -900,60 +819,6 @@ export function SwapTab({
         )}
       </div>
 
-      {/* ── Developer tools — testnet only ── */}
-      {!IS_MAINNET && (
-        <div className="card swap-dev">
-          <button
-            className="swap-dev-toggle"
-            onClick={() => setDevOpen((v) => !v)}
-          >
-            {devOpen ? "▾" : "▸"} Developer tools · make a test token
-          </button>
-
-          {devOpen && (
-            <>
-              <p className="hint">
-                The faucet only hands out MIDEN, so a swap needs a second token.
-                This creates your own faucet and mints the supply to your wallet.
-                It runs three proofs in the browser, so give it a few minutes —
-                you only need to do it once.
-              </p>
-
-              <div className="swap-row">
-                <input
-                  value={symbol}
-                  onChange={(e) => setSymbol(e.target.value)}
-                  placeholder="symbol"
-                  disabled={running}
-                />
-                <input
-                  value={mintAmount}
-                  onChange={(e) => setMintAmount(e.target.value)}
-                  placeholder="amount"
-                  inputMode="decimal"
-                  disabled={running}
-                />
-                <button
-                  className="primary"
-                  onClick={handleMakeToken}
-                  disabled={running || makingFaucet || !accountId}
-                >
-                  {running ? factoryStage || "Working…" : "Create"}
-                </button>
-              </div>
-
-              {factoryErr && <div className="error-box">{factoryErr}</div>}
-              {newFaucet && (
-                <div className="success-box">
-                  Token ready · <span className="mono">{short(newFaucet)}</span>
-                  <br />
-                  Filled into &quot;You want&quot; above.
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
     </>
   );
 }
