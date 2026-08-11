@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useMidenFiWallet } from "@miden-sdk/miden-wallet-adapter-react";
+import { useConsume as useSdkConsume, useSyncState } from "@miden-sdk/react";
 import type {
   Asset,
   GuardianInfo,
@@ -1280,6 +1281,8 @@ function VaultTab({
   const [loadingInbox, setLoadingInbox] = useState(false);
   const [inboxError, setInboxError] = useState<string | null>(null);
   const [reclaimedNote, setReclaimedNote] = useState<{ id: string; txId: string } | null>(null);
+  const { consume: sdkConsume } = useSdkConsume();
+  const { sync } = useSyncState();
   const [recallingId, setRecallingId] = useState<string | null>(null);
   const [recallStatus, setRecallStatus] = useState<TxStatus>({ stage: "idle" });
   const [now, setNow] = useState(Date.now());
@@ -1313,7 +1316,7 @@ function VaultTab({
   };
 
   const consumeNote = async (note: InputNoteDetails) => {
-    if (!requestConsume) return;
+    if (!requestConsume && !sdkConsume) return;
     setRecallingId(note.noteId);
     setInboxError(null);
     setReclaimedNote(null);
@@ -1324,12 +1327,34 @@ function VaultTab({
 
       const resolvedType = noteTypeString(note.noteType);
 
-      const txId = await requestConsume({
-        faucetId: String(firstAsset.faucetId),
-        noteId: String(note.noteId),
-        noteType: resolvedType,
-        amount: Number(firstAsset.amount),
-      });
+      // Two independent ways to consume a note: through the connected wallet,
+      // or through this app's own SDK client. They fail in different
+      // situations, so try one and fall back to the other rather than
+      // dead-ending on whichever happens to be unhappy.
+      let txId: string;
+      try {
+        if (!requestConsume) throw new Error("Wallet cannot consume notes");
+        txId = await requestConsume({
+          faucetId: String(firstAsset.faucetId),
+          noteId: String(note.noteId),
+          noteType: resolvedType,
+          amount: Number(firstAsset.amount),
+        });
+      } catch (walletErr) {
+        // eslint-disable-next-line no-console
+        console.warn("[reclaim] wallet path failed, trying the SDK", walletErr);
+        if (!address) throw walletErr;
+        try {
+          await sync?.();
+        } catch {
+          /* best effort */
+        }
+        const res = await sdkConsume({
+          accountId: address,
+          notes: [String(note.noteId)],
+        });
+        txId = res.transactionId;
+      }
       setRecallStatus({ stage: "broadcasting", txId });
       logTx({
         txId, type: "recall",
