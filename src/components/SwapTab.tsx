@@ -36,6 +36,7 @@ const ERROR_HINTS: [RegExp, string][] = [
   [/timeout|timed out|deadline/i, "The network took too long to answer. Try again."],
   [/network|fetch|rpc|connection|offline/i, "Cannot reach the Miden network right now."],
   [/invalid.*(address|account id)|malformed/i, "That address does not look right."],
+  [/inclusion proof|not.*committed/i, "Your offer is on-chain but has not been included in a block yet. Give it a moment, then press 'Get link'."],
   [/faucet/i, "There is a problem with that token's faucet."],
 ];
 
@@ -284,6 +285,34 @@ export function SwapTab({
     [orders],
   );
 
+  /** exportNote fails until the note has an inclusion proof, i.e. until it
+   *  has landed in a block. Sync and retry rather than giving up. */
+  const exportWhenReady = useCallback(
+    async (noteId: string, attempts = 20): Promise<Uint8Array> => {
+      let last: unknown;
+      for (let i = 0; i < attempts; i++) {
+        try {
+          return await exportNote(noteId);
+        } catch (e) {
+          last = e;
+          const msg = e instanceof Error ? e.message : String(e);
+          // Anything other than "not in a block yet" will not fix itself.
+          if (!/inclusion proof|not.*committed/i.test(msg)) throw e;
+          try {
+            await sync?.();
+          } catch {
+            /* best effort */
+          }
+          await sleep(3000);
+        }
+      }
+      throw last instanceof Error
+        ? last
+        : new Error("The offer did not reach a block in time.");
+    },
+    [exportNote, sync],
+  );
+
   // ── Build an offer ───────────────────────────────────────────────────────
 
   const handleCreateOffer = useCallback(async () => {
@@ -349,8 +378,8 @@ export function SwapTab({
         return;
       }
 
-      setBuildStage("Packaging the offer…");
-      const bytes = await exportNote(fresh.tipNoteId);
+      setBuildStage("Waiting for the block that carries it…");
+      const bytes = await exportWhenReady(fresh.tipNoteId);
       const encoded = b64urlEncode(bytes);
       const base = `${window.location.origin}${window.location.pathname}`;
       const url = `${base}#offer=${encoded}`;
@@ -377,7 +406,7 @@ export function SwapTab({
     pswapCreate,
     refetch,
     sync,
-    exportNote,
+    exportWhenReady,
     explain,
     remember,
     labelFor,
@@ -469,7 +498,7 @@ export function SwapTab({
       setLinking(order.orderId);
       setFormErr(null);
       try {
-        const bytes = await exportNote(order.tipNoteId);
+        const bytes = await exportWhenReady(order.tipNoteId);
         const base = `${window.location.origin}${window.location.pathname}`;
         const url = `${base}#offer=${b64urlEncode(bytes)}`;
         setSavedLinks((prev) => ({ ...prev, [order.orderId]: url }));
@@ -480,7 +509,7 @@ export function SwapTab({
         setLinking(null);
       }
     },
-    [exportNote, explain],
+    [exportWhenReady, explain],
   );
 
   // ── Cancel one of my offers ──────────────────────────────────────────────
