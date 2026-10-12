@@ -13,6 +13,7 @@ import {
 import { SwapTab } from "./SwapTab";
 import { PayrollTab } from "./PayrollTab";
 import { InvoicesTab } from "./InvoicesTab";
+import { BridgeTab, useBridgeConfig } from "./BridgeTab";
 import "./AppContent.css";
 
 // ─── Human-readable errors ─────────────────────────────────────────────────
@@ -235,7 +236,7 @@ function buildRequestLink(req: PaymentRequest): string {
 
 interface TxLogEntry {
   txId: string;
-  type: "send" | "swap" | "airdrop" | "vault" | "recall";
+  type: "send" | "swap" | "airdrop" | "vault" | "recall" | "bridge";
   recipient: string;
   faucetId: string;
   amount: string;
@@ -262,7 +263,7 @@ interface TxStatus {
 
 // ─── Main ──────────────────────────────────────────────────────────────────
 
-type Tab = "send" | "invoices" | "airdrop" | "vault" | "privacy" | "swap" | "payroll";
+type Tab = "send" | "invoices" | "airdrop" | "vault" | "privacy" | "swap" | "payroll" | "bridge";
 
 export function AppContent() {
   const wallet = useMidenFiWallet();
@@ -291,6 +292,7 @@ export function AppContent() {
   const [aliases, setAliases] = useState<Record<string, string>>({});
   const [editingAlias, setEditingAlias] = useState<string | null>(null);
   const [txLog, setTxLog] = useState<TxLogEntry[]>([]);
+  const { config: bridgeConfig } = useBridgeConfig();
 
   // Reload local data whenever the connected account changes.
   useEffect(() => {
@@ -388,7 +390,7 @@ export function AppContent() {
         <p className="subtitle">
           Private send · bulk pay · recurring payroll · time-locked vault ·
           privacy analytics on{" "}
-          <span className="badge-net">Miden Testnet v0.15</span>
+          <span className="badge-net">Miden {NETWORK_LABEL.charAt(0).toUpperCase() + NETWORK_LABEL.slice(1)}</span>
         </p>
       </header>
 
@@ -434,6 +436,9 @@ export function AppContent() {
             <TabBtn label="Privacy" active={tab === "privacy"} onClick={() => setTab("privacy")} />
             <TabBtn label="Swap" active={tab === "swap"} onClick={() => setTab("swap")} />
             <TabBtn label="Payroll" active={tab === "payroll"} onClick={() => setTab("payroll")} />
+            {bridgeConfig && (
+              <TabBtn label="Bridge" active={tab === "bridge"} onClick={() => setTab("bridge")} />
+            )}
           </div>
 
           <div className="card">
@@ -535,6 +540,17 @@ export function AppContent() {
 
           {tab === "payroll" && address && (
             <PayrollTab accountId={address} assets={assets} labelFor={labelFor} />
+          )}
+
+          {tab === "bridge" && address && bridgeConfig && (
+            <BridgeTab
+              accountId={address}
+              assets={assets}
+              labelFor={labelFor}
+              config={bridgeConfig}
+              onBridged={loadAssets}
+              logTx={logTx}
+            />
           )}
         </>
       )}
