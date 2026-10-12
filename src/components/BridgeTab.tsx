@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useBridge, useAssetMetadata, useSyncState } from "@miden-sdk/react";
+import { useBridge, useAssetMetadata, useSyncState, useMiden } from "@miden-sdk/react";
 import type { Asset } from "@miden-sdk/miden-wallet-adapter-base";
 import {
   AGGLAYER_CONFIG_URL,
@@ -205,6 +205,7 @@ export function BridgeTab({
 
   const { bridge, isLoading, stage, reset } = useBridge();
   const { sync } = useSyncState();
+  const { isReady, isInitializing, error: clientError } = useMiden();
 
   useEffect(() => {
     setLog(loadLog(accountId));
@@ -247,6 +248,8 @@ export function BridgeTab({
     if (!EVM_ADDR.test(dest))
       return setFormErr(`Enter a valid ${chain.name} address (0x followed by 40 hex characters).`);
     if (!understood) return setFormErr("Please confirm you understand how bridging works.");
+    if (!isReady)
+      return setFormErr("The Miden client is still starting. Wait a moment and try again.");
 
     try {
       const result = await bridge({
@@ -301,7 +304,7 @@ export function BridgeTab({
     }
   }, [
     accountId, baseAmount, bridge, chain.name, config, decimals, destination,
-    faucetId, held, log, logTx, onBridged, sync, understood,
+    faucetId, held, isReady, log, logTx, onBridged, sync, understood,
   ]);
 
   const stageText = isLoading ? STAGE_LABEL[stage as string] ?? "Working…" : "";
@@ -391,6 +394,28 @@ export function BridgeTab({
           </label>
         </div>
 
+        {!isReady && (
+          <div className={clientError ? "error-box" : "hint"} style={{ marginTop: ".5rem" }}>
+            {clientError ? (
+              <>
+                The Miden client could not start. Refresh the page; if it keeps
+                happening, reconnect your wallet.
+                <details style={{ marginTop: "0.5rem", fontSize: "0.75rem", opacity: 0.8 }}>
+                  <summary style={{ cursor: "pointer" }}>Technical details</summary>
+                  <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-all",
+                    maxHeight: "12rem", overflow: "auto", margin: "0.4rem 0 0" }}>
+                    {clientError.message}
+                  </pre>
+                </details>
+              </>
+            ) : isInitializing ? (
+              "⏳ Starting the Miden client and syncing your account…"
+            ) : (
+              "⏳ Waiting for your wallet to hand over the account…"
+            )}
+          </div>
+        )}
+
         {formErr && (
           <div className="error-box">
             {formErr}
@@ -407,7 +432,7 @@ export function BridgeTab({
         <button
           className="primary"
           onClick={handleBridge}
-          disabled={isLoading || assets.length === 0}
+          disabled={isLoading || !isReady || assets.length === 0}
           style={{ width: "100%", marginTop: ".5rem" }}
         >
           {isLoading ? stageText : `Bridge to ${chain.name}`}
