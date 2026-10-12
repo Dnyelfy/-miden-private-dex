@@ -1,5 +1,13 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useBridge, useAssetMetadata, useSyncState, useMiden } from "@miden-sdk/react";
+import {
+  useAssetMetadata,
+  useSyncState,
+  useMiden,
+  toBech32AccountId,
+} from "@miden-sdk/react";
+import { AccountId, Address, EthAddress } from "@miden-sdk/miden-sdk";
+import { useMidenFiWallet } from "@miden-sdk/miden-wallet-adapter-react";
+import { Transaction } from "@miden-sdk/miden-wallet-adapter-base";
 import type { Asset } from "@miden-sdk/miden-wallet-adapter-base";
 import {
   AGGLAYER_CONFIG_URL,
@@ -161,13 +169,33 @@ function saveLog(account: string, entries: BridgeLogEntry[]) {
   }
 }
 
-const STAGE_LABEL: Record<string, string> = {
+type Stage = "idle" | "building" | "signing" | "confirming";
+
+const STAGE_LABEL: Record<Stage, string> = {
   idle: "",
-  executing: "Building the bridge note…",
-  proving: "Generating the proof…",
-  submitting: "Submitting to Miden…",
-  complete: "Done",
+  building: "Building the bridge note…",
+  signing: "Approve it in your wallet…",
+  confirming: "Waiting for Miden to confirm…",
 };
+
+/** Accepts bech32 (mtst1…/mm1…) or hex account ids. */
+function parseAccountId(value: string): AccountId {
+  const v = value.trim();
+  if (/^0x[0-9a-f]+$/i.test(v)) return AccountId.fromHex(v);
+  try {
+    return Address.fromBech32(v).accountId();
+  } catch {
+    return AccountId.fromBech32(v);
+  }
+}
+
+function toBech32(id: string): string {
+  try {
+    return toBech32AccountId(id);
+  } catch {
+    return id;
+  }
+}
 
 // ─── Component ─────────────────────────────────────────────────────────────
 
@@ -203,9 +231,12 @@ export function BridgeTab({
   const [doneTx, setDoneTx] = useState<string | null>(null);
   const [log, setLog] = useState<BridgeLogEntry[]>(() => loadLog(accountId));
 
-  const { bridge, isLoading, stage, reset } = useBridge();
+  const [stage, setStage] = useState<Stage>("idle");
+  const isLoading = stage !== "idle";
   const { sync } = useSyncState();
-  const { isReady, isInitializing, error: clientError } = useMiden();
+  const { client, isReady, isInitializing, error: clientError, runExclusive } = useMiden();
+  const { requestTransaction, waitForTransaction } = useMidenFiWallet();
+  const reset = () => setStage("idle");
 
   useEffect(() => {
     setLog(loadLog(accountId));
@@ -251,16 +282,42 @@ export function BridgeTab({
     if (!isReady)
       return setFormErr("The Miden client is still starting. Wait a moment and try again.");
 
+    if (!client || typeof requestTransaction !== "function")
+      return setFormErr("Your wallet does not support this yet — update the Miden wallet extension.");
+
     try {
-      const result = await bridge({
-        from: accountId,
-        bridgeAccount: config.bridgeAccount,
-        assetId: faucetId,
-        amount: baseAmount,
-        destinationNetwork: config.destinationNetwork,
-        destinationAddress: dest,
-      });
-      const txId = result.transactionId;
+      // Your account is private, so only the wallet holds its state and can
+      // execute the transaction. The app only builds the request; the wallet
+      // runs, proves and submits it.
+      setStage("building");
+      const request = await runExclusive(async () =>
+        client.newB2AggTransactionRequest(
+          parseAccountId(accountId),
+          parseAccountId(config.bridgeAccount),
+          parseAccountId(faucetId),
+          baseAmount,
+          config.destinationNetwork,
+          EthAddress.fromHex(dest),
+        ),
+      );
+
+      setStage("signing");
+      const tx = Transaction.createCustomTransaction(
+        accountId,
+        toBech32(config.bridgeAccount),
+        request,
+      );
+      const txId = await requestTransaction(tx);
+
+      if (typeof waitForTransaction === "function") {
+        setStage("confirming");
+        try {
+          await waitForTransaction(txId, 60_000);
+        } catch {
+          /* submitted; confirmation polling is best effort */
+        }
+      }
+      setStage("idle");
       setDoneTx(txId);
 
       const entry: BridgeLogEntry = {
@@ -295,6 +352,7 @@ export function BridgeTab({
       }
       onBridged();
     } catch (e) {
+      setStage("idle");
       const raw =
         e instanceof Error ? `${e.name}: ${e.message}\n${e.stack ?? ""}` : String(e);
       setRawErr(raw);
@@ -303,11 +361,12 @@ export function BridgeTab({
       setFormErr(humanError(e));
     }
   }, [
-    accountId, baseAmount, bridge, chain.name, config, decimals, destination,
-    faucetId, held, isReady, log, logTx, onBridged, sync, understood,
+    accountId, baseAmount, chain.name, client, config, decimals, destination,
+    faucetId, held, isReady, log, logTx, onBridged, requestTransaction,
+    runExclusive, sync, understood, waitForTransaction,
   ]);
 
-  const stageText = isLoading ? STAGE_LABEL[stage as string] ?? "Working…" : "";
+  const stageText = isLoading ? STAGE_LABEL[stage] : "";
 
   return (
     <>
