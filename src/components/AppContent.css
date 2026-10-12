@@ -711,3 +711,7 @@ button.primary { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
   background: #1a1f2e; color: inherit; font-size: 0.88rem;
 }
 .swap-side select:focus { outline: none; border-color: #6366f1; }
+
+/* Bridge */
+.bridge-ack { display:flex; align-items:flex-start; gap:.5rem; cursor:pointer; }
+.bridge-ack input { width:auto; margin-top:.2rem; flex:none; }
